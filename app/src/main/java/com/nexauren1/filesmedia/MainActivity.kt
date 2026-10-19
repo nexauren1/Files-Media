@@ -703,9 +703,10 @@ class MainActivity : AppCompatActivity() {
             textSize = 30f
             setTextColor(secondaryColor)
         })
-        return card.also {
-            (it.layoutParams as? LinearLayout.LayoutParams)?.bottomMargin = dp(12)
-        }.apply { }
+        card.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) }
+        return card
     }
 
     private fun renderStoragePage() {

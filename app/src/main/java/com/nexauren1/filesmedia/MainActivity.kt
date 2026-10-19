@@ -6,6 +6,10 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -195,10 +199,44 @@ class MainActivity : AppCompatActivity() {
         menu.show()
     }
 
+    private fun buildHomeToolbar() {
+        toolbar.removeAllViews()
+        val searchPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.WHITE, 30)
+            setPadding(dp(8), 0, dp(8), 0)
+            elevation = dp(1).toFloat()
+        }
+        searchPill.addView(actionText("☰", 22f) { showNavigationDrawer() },
+            LinearLayout.LayoutParams(dp(42), dp(48)))
+        val prompt = TextView(this).apply {
+            text = "Pesquisar ficheiros"
+            textSize = 16f
+            setTextColor(secondaryColor)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, 0, 0)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showSearchDialog() }
+        }
+        searchPill.addView(prompt, LinearLayout.LayoutParams(0, dp(48), 1f))
+        searchPill.addView(actionText("⌕", 30f) { showSearchDialog() },
+            LinearLayout.LayoutParams(dp(44), dp(48)))
+        toolbar.addView(searchPill, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
+        ).apply {
+            leftMargin = dp(6)
+            rightMargin = dp(6)
+            topMargin = dp(3)
+            bottomMargin = dp(3)
+        })
+    }
+
     private fun renderHome() {
         pageKind = "home"
         pageTitle = "Files Media"
-        buildToolbar(pageTitle, false)
+        buildHomeToolbar()
         contentHost.removeAllViews()
 
         val scroll = ScrollView(this).apply {
@@ -207,81 +245,565 @@ class MainActivity : AppCompatActivity() {
         }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(24))
+            setPadding(dp(18), dp(4), dp(18), dp(28))
         }
         scroll.addView(page)
         contentHost.addView(scroll, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        val intro = TextView(this).apply {
-            text = "Os teus ficheiros, todos juntos"
-            textSize = 17f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(textColor)
-            setPadding(dp(2), dp(4), dp(2), dp(14))
-        }
-        page.addView(intro)
-
-        val searchCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.WHITE, 28)
-            setPadding(dp(16), dp(2), dp(16), dp(2))
-            elevation = dp(1).toFloat()
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { showSearchDialog() }
-        }
-        searchCard.addView(TextView(this).apply {
-            text = "⌕"
-            textSize = 28f
-            setTextColor(primaryColor)
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(dp(38), dp(50)))
-        searchCard.addView(TextView(this).apply {
-            text = getString(R.string.search_hint)
-            textSize = 15f
-            setTextColor(secondaryColor)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        page.addView(searchCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
-        ).apply { bottomMargin = dp(22) })
+        addRecentCarousel(page)
 
         page.addView(sectionTitle("Categorias"))
         addCategoryGrid(page)
 
-        page.addView(sectionTitle("Armazenamento"))
+        page.addView(sectionTitle("Coleções"))
+        addCollectionSection(page)
+
+        page.addView(sectionTitle("Todo o armazenamento"))
         page.addView(storageCard(), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(22) })
+        ).apply { bottomMargin = dp(18) })
 
-        page.addView(sectionTitle("Recentes"))
-        val recentRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        page.addView(recentRows)
-        val loading = TextView(this).apply {
-            text = "A procurar ficheiros…"
-            textSize = 14f
+        page.addView(TextView(this).apply {
+            text = "Os teus ficheiros permanecem no dispositivo."
+            textSize = 12f
             setTextColor(secondaryColor)
-            setPadding(dp(10), dp(12), dp(10), dp(12))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(10))
+        })
+    }
+
+    private fun addRecentCarousel(parent: LinearLayout) {
+        parent.addView(sectionTitle("Recentes"))
+        val scroller = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(8))
         }
-        recentRows.addView(loading)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        scroller.addView(row)
+        val placeholder = TextView(this).apply {
+            text = "Os ficheiros recentes aparecerão aqui."
+            textSize = 13f
+            setTextColor(secondaryColor)
+            gravity = Gravity.CENTER
+            background = rounded(Color.WHITE, 18)
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        row.addView(placeholder, LinearLayout.LayoutParams(
+            dp(248), dp(126)
+        ).apply { rightMargin = dp(10) })
+        parent.addView(scroller, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(10) })
 
         lifecycleScope.launch {
-            val entries = withContext(Dispatchers.IO) { repository.query("all") }
-            if (pageKind != "home" || !isAddedOrFinishingSafe()) return@launch
-            recentRows.removeAllViews()
+            val entries = withContext(Dispatchers.IO) { repository.query("all").take(8) }
+            if (pageKind != "home" || isFinishing || isDestroyed) return@launch
+            row.removeAllViews()
             if (entries.isEmpty()) {
-                recentRows.addView(emptyMessage("Permite o acesso a multimédia ou explora uma pasta para começar."))
+                row.addView(TextView(this@MainActivity).apply {
+                    text = "Permite o acesso a multimédia para mostrar os teus ficheiros recentes."
+                    textSize = 13f
+                    setTextColor(secondaryColor)
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = rounded(Color.WHITE, 18)
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
+                }, LinearLayout.LayoutParams(
+                    dp(248), dp(126)
+                ).apply { rightMargin = dp(10) })
             } else {
-                entries.take(7).forEach { entry ->
-                    recentRows.addView(createSimpleRow(entry, false) { openEntry(entry) })
+                entries.forEach { entry ->
+                    row.addView(createRecentCard(entry), LinearLayout.LayoutParams(
+                        dp(142), dp(142)
+                    ).apply { rightMargin = dp(10) })
                 }
             }
         }
     }
 
-    private fun isAddedOrFinishingSafe(): Boolean = !isFinishing && !isDestroyed
+    private fun createRecentCard(entry: MediaEntry): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(Color.WHITE, 18)
+            setPadding(dp(7), dp(7), dp(7), dp(8))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openEntry(entry) }
+        }
+        val preview = FrameLayout(this).apply {
+            background = rounded(Color.rgb(235, 234, 244), 13)
+        }
+        val image = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
+        }
+        preview.addView(image, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        val fallback = TextView(this).apply {
+            text = iconFor(entry)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(primaryColor)
+        }
+        preview.addView(fallback, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            Gravity.CENTER
+        ))
+        card.addView(preview, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(76)
+        ))
+        card.addView(TextView(this).apply {
+            text = entry.name
+            textSize = 12f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            setPadding(dp(2), dp(6), dp(2), 0)
+        })
+        card.addView(TextView(this).apply {
+            text = if (entry.isDirectory) "Pasta" else StorageRepository.formatSize(entry.size)
+            textSize = 11f
+            setTextColor(secondaryColor)
+            setPadding(dp(2), dp(3), dp(2), 0)
+            maxLines = 1
+        })
+
+        val mime = (entry.mimeType ?: "").lowercase(Locale.ROOT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            (mime.startsWith("image/") || mime.startsWith("video/"))
+        ) {
+            lifecycleScope.launch {
+                val bitmap = withContext(Dispatchers.IO) {
+                    try {
+                        contentResolver.loadThumbnail(
+                            entry.uri,
+                            android.util.Size(dp(132), dp(76)),
+                            android.os.CancellationSignal()
+                        )
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                if (bitmap != null && !isDestroyed) {
+                    image.setImageBitmap(bitmap)
+                    image.visibility = View.VISIBLE
+                    fallback.visibility = View.GONE
+                }
+            }
+        }
+        return card
+    }
+
+    private fun addCollectionSection(parent: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val favorites = collectionTile("☆", "Marcados com estrela", "Ficheiros guardados") {
+            openCategory("starred", "Marcados com estrela")
+        }
+        val largeFiles = collectionTile("▤", "Ficheiros grandes", "Revê antes de eliminar") {
+            openCategory("large", "Ficheiros grandes")
+        }
+        row.addView(favorites, LinearLayout.LayoutParams(0, dp(94), 1f).apply {
+            rightMargin = dp(6)
+        })
+        row.addView(largeFiles, LinearLayout.LayoutParams(0, dp(94), 1f).apply {
+            leftMargin = dp(6)
+        })
+        parent.addView(row, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(22) })
+    }
+
+    private fun collectionTile(
+        icon: String,
+        title: String,
+        subtitle: String,
+        action: () -> Unit
+    ): View {
+        val tile = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.WHITE, 18)
+            setPadding(dp(12), dp(8), dp(8), dp(8))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        tile.addView(TextView(this).apply {
+            text = icon
+            textSize = 26f
+            setTextColor(primaryColor)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(dp(34), dp(50)))
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), 0, 0, 0)
+        }
+        labels.addView(TextView(this).apply {
+            text = title
+            textSize = 13f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        labels.addView(TextView(this).apply {
+            text = subtitle
+            textSize = 11f
+            setTextColor(secondaryColor)
+            setPadding(0, dp(3), 0, 0)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        tile.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        return tile
+    }
+
+    private fun showNavigationDrawer() {
+        val drawer = android.app.Dialog(this)
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(135, 0, 0, 0))
+            setOnClickListener { drawer.dismiss() }
+        }
+        val panelWidth = minOf(dp(330), (resources.displayMetrics.widthPixels * 0.84f).toInt())
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(pageBackground)
+            setPadding(dp(22), dp(42), dp(16), dp(20))
+            isClickable = true
+            isFocusable = true
+        }
+        overlay.addView(panel, FrameLayout.LayoutParams(
+            panelWidth, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START
+        ))
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(20))
+        }
+        header.addView(TextView(this).apply {
+            text = "📁"
+            textSize = 34f
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(dp(52), dp(66)))
+        val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brand.addView(TextView(this).apply {
+            text = "Files Media"
+            textSize = 22f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+        })
+        brand.addView(TextView(this).apply {
+            text = "Ficheiros, música, vídeo e PDF"
+            textSize = 12f
+            setTextColor(secondaryColor)
+            setPadding(0, dp(3), 0, 0)
+        })
+        header.addView(brand)
+        panel.addView(header, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(88)
+        ))
+        addDrawerItem(panel, "✦", "Limpar", "Sugestões para libertar espaço") {
+            drawer.dismiss()
+            renderCleanupPage()
+        }
+        addDrawerItem(panel, "◉", "Armazenamento", "Ver espaço utilizado") {
+            drawer.dismiss()
+            renderStoragePage()
+        }
+        addDrawerItem(panel, "⚙", "Definições", "Permissões e preferências") {
+            drawer.dismiss()
+            showSettingsDialog()
+        }
+        addDrawerItem(panel, "?", "Ajuda e comentários", "Como utilizar o Files Media") {
+            drawer.dismiss()
+            AlertDialog.Builder(this)
+                .setTitle("Ajuda e comentários")
+                .setMessage("Explora as categorias, abre um ficheiro para o reproduzir ou ler e usa o menu ⋮ para partilhar, copiar, mover, mudar o nome ou eliminar. Para pastas completas, escolhe “Explorar armazenamento”.")
+                .setPositiveButton("Entendi", null)
+                .show()
+        }
+        val divider = View(this).apply {
+            setBackgroundColor(Color.rgb(224, 222, 235))
+        }
+        panel.addView(divider, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(1)
+        ).apply { topMargin = dp(12); bottomMargin = dp(12) })
+        addDrawerItem(panel, "i", "Sobre a aplicação", "Versão " + BuildConfig.VERSION_NAME) {
+            drawer.dismiss()
+            AlertDialog.Builder(this)
+                .setTitle("Files Media")
+                .setMessage("Uma aplicação gratuita para organizar ficheiros, reproduzir áudio e vídeo e abrir PDFs. A prioridade é ser útil, leve, privada e acessível.")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+        addDrawerItem(panel, "♧", "Privacidade", "Os ficheiros ficam no teu dispositivo") {
+            drawer.dismiss()
+            AlertDialog.Builder(this)
+                .setTitle("Privacidade")
+                .setMessage("O Files Media foi concebido para funcionar localmente. O acesso a multimédia e pastas depende das permissões concedidas pelo utilizador. Esta versão não exige conta.")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
+        drawer.setContentView(overlay)
+        drawer.setCanceledOnTouchOutside(true)
+        drawer.show()
+        drawer.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            window.setGravity(Gravity.TOP or Gravity.START)
+        }
+    }
+
+    private fun addDrawerItem(
+        parent: LinearLayout,
+        icon: String,
+        title: String,
+        subtitle: String,
+        action: () -> Unit
+    ) {
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(6), dp(4), dp(6))
+            background = selectableBackground()
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        item.addView(TextView(this).apply {
+            text = icon
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(primaryColor)
+        }, LinearLayout.LayoutParams(dp(42), dp(54)))
+        val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        labels.addView(TextView(this).apply {
+            text = title
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+        })
+        labels.addView(TextView(this).apply {
+            text = subtitle
+            textSize = 12f
+            setTextColor(secondaryColor)
+            setPadding(0, dp(3), 0, 0)
+            maxLines = 2
+        })
+        item.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        parent.addView(item, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        ))
+    }
+
+    private fun showSettingsDialog() {
+        val options = arrayOf("Atualizar lista de ficheiros", "Permissões de multimédia", "Sobre o Files Media")
+        AlertDialog.Builder(this)
+            .setTitle("Definições")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> reloadCurrentPage()
+                    1 -> requestMediaPermissionsIfNeeded(force = true)
+                    2 -> AlertDialog.Builder(this)
+                        .setTitle("Files Media")
+                        .setMessage("Versão " + BuildConfig.VERSION_NAME + "\n\nSem conta obrigatória e pensado para funcionar localmente.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun renderCleanupPage() {
+        pageKind = "clean"
+        pageTitle = "Limpar"
+        buildToolbar(pageTitle, true)
+        contentHost.removeAllViews()
+        val scroll = ScrollView(this)
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(28))
+        }
+        scroll.addView(page)
+        contentHost.addView(scroll)
+        page.addView(storageCard(), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(20) })
+        page.addView(sectionTitle("Sugestões para libertar espaço"))
+        page.addView(cleanupActionCard(
+            "Ficheiros grandes",
+            "Revê vídeos e outros ficheiros grandes antes de os eliminar.",
+            "▤"
+        ) { openCategory("large", "Ficheiros grandes") })
+        page.addView(cleanupActionCard(
+            "Vídeos",
+            "Os vídeos podem ocupar bastante espaço no dispositivo.",
+            "▶"
+        ) { openCategory("videos", "Vídeos") })
+        page.addView(cleanupActionCard(
+            "Transferências",
+            "Confirma se ainda precisas dos ficheiros recebidos.",
+            "↓"
+        ) { openCategory("downloads", "Transferências") })
+        page.addView(TextView(this).apply {
+            text = "Nada será apagado automaticamente. Revê os ficheiros e confirma cada eliminação."
+            textSize = 13f
+            setTextColor(secondaryColor)
+            setPadding(dp(4), dp(14), dp(4), 0)
+        })
+    }
+
+    private fun cleanupActionCard(title: String, description: String, icon: String, action: () -> Unit): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.WHITE, 18)
+            setPadding(dp(14), dp(14), dp(12), dp(14))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        card.addView(TextView(this).apply {
+            text = icon
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(primaryColor)
+        }, LinearLayout.LayoutParams(dp(48), dp(54)))
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), 0, dp(4), 0)
+        }
+        labels.addView(TextView(this).apply {
+            text = title
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+        })
+        labels.addView(TextView(this).apply {
+            text = description
+            textSize = 12f
+            setTextColor(secondaryColor)
+            setPadding(0, dp(4), 0, 0)
+            maxLines = 2
+        })
+        card.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(TextView(this).apply {
+            text = "›"
+            textSize = 30f
+            setTextColor(secondaryColor)
+        })
+        return card.also {
+            (it.layoutParams as? LinearLayout.LayoutParams)?.bottomMargin = dp(12)
+        }.apply { }
+    }
+
+    private fun renderStoragePage() {
+        pageKind = "storage"
+        pageTitle = "Armazenamento"
+        buildToolbar(pageTitle, true)
+        contentHost.removeAllViews()
+        val scroll = ScrollView(this)
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(28))
+        }
+        scroll.addView(page)
+        contentHost.addView(scroll)
+
+        var total = 0L
+        var free = 0L
+        try {
+            val stat = StatFs(Environment.getExternalStorageDirectory().absolutePath)
+            total = stat.totalBytes
+            free = stat.availableBytes
+        } catch (_: Exception) { }
+        val used = (total - free).coerceAtLeast(0L)
+        val fraction = if (total > 0L) used.toFloat() / total.toFloat() else 0f
+        page.addView(StorageDonutView(this, fraction), LinearLayout.LayoutParams(
+            dp(230), dp(230)
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(12)
+            bottomMargin = dp(12)
+        })
+        val usage = TextView(this).apply {
+            text = "Usado: " + StorageRepository.formatSize(used) + "     •     Total: " + StorageRepository.formatSize(total)
+            textSize = 15f
+            setTextColor(textColor)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(20))
+        }
+        page.addView(usage)
+        page.addView(sectionTitle("Conteúdo multimédia"))
+        val summaryRows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(Color.WHITE, 18)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        val breakdown = listOf(
+            Triple("Imagens", "images", Color.rgb(50, 112, 227)),
+            Triple("Vídeos", "videos", Color.rgb(34, 181, 112)),
+            Triple("Áudio", "audio", Color.rgb(144, 80, 217)),
+            Triple("Documentos", "documents", Color.rgb(222, 73, 169))
+        )
+        val valueViews = LinkedHashMap<String, TextView>()
+        breakdown.forEach { item ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(10), 0, dp(10))
+            }
+            row.addView(TextView(this).apply {
+                text = "●"
+                textSize = 14f
+                setTextColor(item.third)
+            }, LinearLayout.LayoutParams(dp(26), ViewGroup.LayoutParams.WRAP_CONTENT))
+            row.addView(TextView(this).apply {
+                text = item.first
+                textSize = 14f
+                setTextColor(secondaryColor)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val value = TextView(this).apply {
+                text = "A calcular…"
+                textSize = 14f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(textColor)
+            }
+            valueViews[item.first] = value
+            row.addView(value)
+            summaryRows.addView(row)
+        }
+        page.addView(summaryRows)
+        page.addView(TextView(this).apply {
+            text = "Os tamanhos por categoria representam ficheiros acessíveis ao Files Media. A utilização de aplicações e do sistema é gerida pelo Android."
+            textSize = 12f
+            setTextColor(secondaryColor)
+            setPadding(dp(4), dp(12), dp(4), 0)
+        })
+
+        lifecycleScope.launch {
+            val totals = withContext(Dispatchers.IO) {
+                breakdown.associate { item ->
+                    item.first to repository.query(item.second).sumOf { file -> file.size.coerceAtLeast(0L) }
+                }
+            }
+            if (pageKind != "storage" || isFinishing || isDestroyed) return@launch
+            totals.forEach { (label, bytes) ->
+                valueViews[label]?.text = StorageRepository.formatSize(bytes)
+            }
+        }
+    }
 
     private fun addCategoryGrid(parent: LinearLayout) {
         val rows = listOf(
@@ -412,6 +934,9 @@ class MainActivity : AppCompatActivity() {
             progressTintList = android.content.res.ColorStateList.valueOf(primaryColor)
             progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(233, 232, 242))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)))
+        card.isClickable = true
+        card.isFocusable = true
+        card.setOnClickListener { renderStoragePage() }
         return card
     }
 
@@ -451,7 +976,16 @@ class MainActivity : AppCompatActivity() {
         ))
         contentHost.addView(frame)
         lifecycleScope.launch {
-            val entries = withContext(Dispatchers.IO) { repository.query(category, searchQuery) }
+            val entries = withContext(Dispatchers.IO) {
+                val sourceCategory = if (category == "starred" || category == "large") "all" else category
+                val found = repository.query(sourceCategory, searchQuery)
+                when (category) {
+                    "starred" -> found.filter { isFavorite(it) }
+                    "large" -> found.filter { it.size >= 100L * 1024L * 1024L }
+                        .sortedByDescending { it.size }
+                    else -> found
+                }
+            }
             if (pageKind != category || isFinishing || isDestroyed) return@launch
             currentVisibleEntries = entries
             currentAdapter?.submit(entries)
@@ -665,8 +1199,9 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 3, 2, "Mudar nome")
         menu.menu.add(0, 4, 3, "Copiar para…")
         menu.menu.add(0, 5, 4, "Mover para…")
-        menu.menu.add(0, 6, 5, "Informações")
-        menu.menu.add(0, 7, 6, "Eliminar")
+        menu.menu.add(0, 8, 5, if (isFavorite(entry)) "Remover dos favoritos" else "Adicionar aos favoritos")
+        menu.menu.add(0, 6, 6, "Informações")
+        menu.menu.add(0, 7, 7, "Eliminar")
         menu.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> openEntry(entry)
@@ -676,10 +1211,33 @@ class MainActivity : AppCompatActivity() {
                 5 -> chooseTransferDestination(entry, true)
                 6 -> showInformation(entry)
                 7 -> deleteEntry(entry)
+                8 -> toggleFavorite(entry)
             }
             true
         }
         menu.show()
+    }
+
+    private fun isFavorite(entry: MediaEntry): Boolean {
+        val saved = getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+            .getStringSet("favorite_uris", emptySet())
+        return saved?.contains(entry.uri.toString()) == true
+    }
+
+    private fun toggleFavorite(entry: MediaEntry) {
+        val preferences = getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+        val saved = preferences.getStringSet("favorite_uris", emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+        val added = if (saved.contains(entry.uri.toString())) {
+            saved.remove(entry.uri.toString())
+            false
+        } else {
+            saved.add(entry.uri.toString())
+            true
+        }
+        preferences.edit().putStringSet("favorite_uris", saved).apply()
+        toast(if (added) "Adicionado aos favoritos." else "Removido dos favoritos.")
+        if (pageKind == "starred") reloadCurrentPage()
     }
 
     private fun shareEntry(entry: MediaEntry) {
@@ -817,6 +1375,8 @@ class MainActivity : AppCompatActivity() {
         when {
             directoryStack.isNotEmpty() -> renderCurrentFolder()
             pageKind == "home" -> renderHome()
+            pageKind == "clean" -> renderCleanupPage()
+            pageKind == "storage" -> renderStoragePage()
             else -> renderCategory(pageKind, pageTitle)
         }
     }
@@ -893,6 +1453,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    private class StorageDonutView(
+        context: android.content.Context,
+        private val usedFraction: Float
+    ) : android.view.View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val bounds = RectF()
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val density = resources.displayMetrics.density
+            val stroke = 26f * density
+            val size = minOf(width, height).toFloat()
+            val centerX = width / 2f
+            val centerY = height / 2f
+            val radius = size / 2f - stroke / 2f - 3f * density
+            bounds.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
+
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = stroke
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.color = Color.rgb(228, 227, 237)
+            canvas.drawArc(bounds, -90f, 360f, false, paint)
+            paint.color = Color.rgb(80, 88, 174)
+            canvas.drawArc(bounds, -90f, 360f * usedFraction.coerceIn(0f, 1f), false, paint)
+
+            paint.style = Paint.Style.FILL
+            paint.strokeCap = Paint.Cap.BUTT
+            paint.textAlign = Paint.Align.CENTER
+            paint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            paint.textSize = 34f * density
+            paint.color = Color.rgb(30, 31, 40)
+            canvas.drawText((usedFraction.coerceIn(0f, 1f) * 100f).toInt().toString() + "%",
+                centerX, centerY + 10f * density, paint)
+            paint.textSize = 12f * density
+            paint.color = Color.rgb(101, 102, 116)
+            canvas.drawText("utilizado", centerX, centerY + 32f * density, paint)
+        }
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }

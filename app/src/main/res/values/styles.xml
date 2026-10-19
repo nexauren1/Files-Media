@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FilesMedia" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/fm_primary</item>
+        <item name="colorPrimaryDark">@color/fm_primary_dark</item>
+        <item name="colorAccent">@color/fm_primary</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/fm_background</item>
+        <item name="android:navigationBarColor">@color/fm_background</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/fm_background</item>
+    </style>
+</resources>

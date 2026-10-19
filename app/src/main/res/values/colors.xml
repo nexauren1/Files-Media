@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fm_background">#F7F6FC</color>
+    <color name="fm_surface">#FFFFFF</color>
+    <color name="fm_primary">#5B63B7</color>
+    <color name="fm_primary_dark">#454C99</color>
+    <color name="fm_text">#20212A</color>
+    <color name="fm_secondary_text">#666875</color>
+    <color name="fm_border">#E8E6F0</color>
+</resources>

@@ -1291,12 +1291,7 @@ class MainActivity : AppCompatActivity() {
             background = selectableBackground()
             setOnClickListener { onClick() }
         }
-        val icon = TextView(this).apply {
-            text = iconFor(entry)
-            textSize = 24f
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(235, 234, 244), 14)
-        }
+        val icon = FeatureIconView(this, iconKeyForEntry(entry))
         row.addView(icon, LinearLayout.LayoutParams(dp(54), dp(54)))
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

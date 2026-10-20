@@ -20,7 +20,7 @@ import kotlin.math.sin
  */
 class FeatureIconView(
     context: Context,
-    private val kind: String
+    private var kind: String
 ) : View(context) {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -43,6 +43,26 @@ class FeatureIconView(
             else -> "Ficheiro"
         }
         isImportantForAccessibility = true
+    }
+
+    fun setKind(newKind: String) {
+        if (kind == newKind) return
+        kind = newKind
+        contentDescription = when (kind) {
+            "folder", "all" -> "Pasta"
+            "image" -> "Imagens"
+            "video" -> "Vídeos"
+            "audio" -> "Áudio"
+            "document", "pdf" -> "Documento PDF"
+            "download" -> "Transferências"
+            "star" -> "Favoritos"
+            "large" -> "Ficheiros grandes"
+            "storage" -> "Armazenamento"
+            "clean" -> "Limpeza"
+            "apps" -> "Aplicações"
+            else -> "Ficheiro"
+        }
+        invalidate()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

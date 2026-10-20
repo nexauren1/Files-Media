@@ -16,6 +16,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Button
 import android.widget.Toast
 import android.text.InputType
 import android.widget.PopupMenu

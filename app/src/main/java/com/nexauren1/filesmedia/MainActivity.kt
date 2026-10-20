@@ -1384,7 +1384,6 @@ class MainActivity : AppCompatActivity() {
                     PlaybackActivity.EXTRA_QUEUE_TITLES,
                     ArrayList(queue.map { it.name })
                 )
-                putIntExtra(PlaybackActivity.EXTRA_QUEUE_INDEX, selectedIndex)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 data = entry.uri
             })

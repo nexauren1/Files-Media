@@ -1906,7 +1906,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Criar") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isBlank() || name == "." || name == ".." ||
-                    name.contains("/") || name.contains("\\\\")
+                    name.contains("/") || name.contains("\\")
                 ) {
                     toast("Introduz um nome de pasta válido.")
                     return@setPositiveButton

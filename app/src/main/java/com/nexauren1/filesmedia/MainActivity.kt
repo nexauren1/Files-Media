@@ -1134,7 +1134,11 @@ class MainActivity : AppCompatActivity() {
                     "large" -> combined.filter { it.size >= 100L * 1024L * 1024L }
                     else -> combined
                 }
-                sortEntries(filtered)
+                when {
+                    category == "large" -> filtered.sortedByDescending { it.size }
+                    category == "documents" && sortMode == "date" -> filtered
+                    else -> sortEntries(filtered)
+                }
             }
             if (pageKind != category || isFinishing || isDestroyed) return@launch
             currentVisibleEntries = entries

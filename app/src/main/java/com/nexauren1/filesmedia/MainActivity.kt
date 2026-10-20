@@ -949,7 +949,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), 0, dp(14), 0)
             isClickable = true
             isFocusable = true
-            background = selectableBackground()
             setOnClickListener { openStoragePicker() }
         }
         browse.addView(FeatureIconView(this, "folder"), LinearLayout.LayoutParams(dp(42), dp(42)))

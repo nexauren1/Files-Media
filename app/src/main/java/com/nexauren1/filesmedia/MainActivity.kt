@@ -220,7 +220,7 @@ class MainActivity : AppCompatActivity() {
                 "Ordenar: mais recentes" -> { sortMode = "date"; reloadCurrentPage() }
                 "Ordenar: nome A–Z" -> { sortMode = "name"; reloadCurrentPage() }
                 "Ordenar: maior tamanho" -> { sortMode = "size"; reloadCurrentPage() }
-                "Explorar armazenamento" -> openStoragePicker()
+                "Explorar armazenamento" -> openStoragePicker(forcePicker = true)
                 "Atualizar" -> reloadCurrentPage()
                 "Permissões" -> requestMediaPermissionsIfNeeded(force = true)
             }
@@ -988,7 +988,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun readPdfEntry(uri: Uri): MediaEntry? {
-        var name = "Documento.pdf"
+        val uriName = uri.lastPathSegment
+            ?.substringAfterLast('/')
+            ?.substringAfterLast(':')
+            ?.takeIf { it.isNotBlank() }
+        var name = uriName?.takeIf { it.endsWith(".pdf", ignoreCase = true) } ?: "Documento.pdf"
         var size = 0L
         try {
             contentResolver.query(
@@ -999,17 +1003,25 @@ class MainActivity : AppCompatActivity() {
                 if (cursor.moveToFirst()) {
                     val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                        cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }?.let { name = it }
+                    }
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        size = cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                    }
                 }
             }
         } catch (_: Exception) {
-            return null
+            // Some document providers omit OpenableColumns; continue with URI/MIME fallbacks.
         }
-        val mime = contentResolver.getType(uri) ?: "application/pdf"
-        if (!mime.equals("application/pdf", ignoreCase = true) &&
-            !name.endsWith(".pdf", ignoreCase = true)
-        ) return null
+        val mime = try { contentResolver.getType(uri) } catch (_: Exception) { null }
+        val isPdf = mime.equals("application/pdf", ignoreCase = true) ||
+            name.endsWith(".pdf", ignoreCase = true) ||
+            uriName?.endsWith(".pdf", ignoreCase = true) == true
+        if (!isPdf) return null
+        if (!name.endsWith(".pdf", ignoreCase = true) && mime.equals("application/pdf", ignoreCase = true)) {
+            name += ".pdf"
+        }
         return MediaEntry(
             uri = uri,
             name = name,
@@ -1220,8 +1232,8 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun openStoragePicker() {
-        if (directoryStack.isNotEmpty()) {
+    private fun openStoragePicker(forcePicker: Boolean = false) {
+        if (directoryStack.isNotEmpty() && !forcePicker) {
             renderCurrentFolder()
             return
         }

@@ -28,11 +28,14 @@ class FileListAdapter(
     private val context: Context,
     private val onOpen: (MediaEntry) -> Unit,
     private val onMenu: (MediaEntry, View) -> Unit,
-    private val initialGridMode: Boolean = false
+    private val initialGridMode: Boolean = false,
+    private val onSelectionChanged: (List<MediaEntry>, Boolean) -> Unit = { _, _ -> }
 ) : RecyclerView.Adapter<FileListAdapter.EntryHolder>() {
 
     private var entries: List<MediaEntry> = emptyList()
     private val gridMode = initialGridMode
+    private val selectedUris = LinkedHashSet<String>()
+    private var selectionMode = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     init {
@@ -41,7 +44,55 @@ class FileListAdapter(
 
     fun submit(items: List<MediaEntry>) {
         entries = items.toList()
+        val available = entries.map { it.uri.toString() }.toSet()
+        selectedUris.retainAll(available)
+        if (selectedUris.isEmpty()) selectionMode = false
         notifyDataSetChanged()
+        onSelectionChanged(selectedEntries(), selectionMode)
+    }
+
+    fun selectedEntries(): List<MediaEntry> =
+        entries.filter { selectedUris.contains(it.uri.toString()) }
+
+    fun isSelectionModeActive(): Boolean = selectionMode
+
+    fun selectAll() {
+        if (entries.isEmpty()) return
+        selectionMode = true
+        selectedUris.clear()
+        entries.forEach { selectedUris.add(it.uri.toString()) }
+        notifyDataSetChanged()
+        onSelectionChanged(selectedEntries(), true)
+    }
+
+    fun clearSelection() {
+        selectedUris.clear()
+        selectionMode = false
+        notifyDataSetChanged()
+        onSelectionChanged(emptyList(), false)
+    }
+
+    private fun toggleSelection(entry: MediaEntry) {
+        selectionMode = true
+        val key = entry.uri.toString()
+        if (!selectedUris.add(key)) selectedUris.remove(key)
+        if (selectedUris.isEmpty()) selectionMode = false
+        notifyDataSetChanged()
+        onSelectionChanged(selectedEntries(), selectionMode)
+    }
+
+    private fun selectOnLongPress(entry: MediaEntry) {
+        val key = entry.uri.toString()
+        if (!selectionMode) {
+            selectionMode = true
+            selectedUris.clear()
+            selectedUris.add(key)
+        } else {
+            if (!selectedUris.add(key)) selectedUris.remove(key)
+            if (selectedUris.isEmpty()) selectionMode = false
+        }
+        notifyDataSetChanged()
+        onSelectionChanged(selectedEntries(), selectionMode)
     }
 
     override fun getItemViewType(position: Int): Int = if (gridMode) TYPE_GRID else TYPE_LIST
@@ -215,11 +266,26 @@ class FileListAdapter(
             }
         }
 
-        holder.itemView.setOnClickListener { onOpen(entry) }
+        val selected = selectedUris.contains(entry.uri.toString())
+        holder.itemView.background = if (selected) {
+            rounded(Color.rgb(220, 226, 255), if (gridMode) 18 else 14)
+        } else if (gridMode) {
+            rounded(Color.WHITE, 18)
+        } else {
+            rounded(Color.TRANSPARENT, 14)
+        }
+        holder.itemView.setOnClickListener {
+            if (selectionMode) toggleSelection(entry) else onOpen(entry)
+        }
+        holder.itemView.setOnLongClickListener {
+            selectOnLongPress(entry)
+            true
+        }
         holder.menu.setOnClickListener { onMenu(entry, holder.menu) }
         holder.menu.contentDescription = "Ações para " + entry.name
         holder.itemView.contentDescription = entry.name +
-            if (entry.isDirectory) ", pasta" else ", " + detailText(entry)
+            if (entry.isDirectory) ", pasta" else ", " + detailText(entry) +
+                if (selected) ", selecionado" else ""
     }
 
     override fun getItemCount(): Int = entries.size

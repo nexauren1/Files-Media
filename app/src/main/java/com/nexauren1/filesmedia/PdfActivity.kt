@@ -112,8 +112,18 @@ class PdfActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(10), dp(12), dp(12))
         }
-        previousButton = Button(this).apply { text = "‹ Anterior"; isEnabled = false }
-        nextButton = Button(this).apply { text = "Seguinte ›"; isEnabled = false }
+        previousButton = Button(this).apply {
+            text = "‹ Anterior"
+            isEnabled = false
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            setTextColor(Color.rgb(80, 88, 174))
+        }
+        nextButton = Button(this).apply {
+            text = "Seguinte ›"
+            isEnabled = false
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(80, 88, 174))
+            setTextColor(Color.WHITE)
+        }
         pageLabel = TextView(this).apply {
             text = "— / —"
             textSize = 14f

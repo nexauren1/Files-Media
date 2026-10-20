@@ -320,6 +320,7 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
+        addBrandBanner(page)
         addRecentCarousel(page)
 
         page.addView(sectionTitle("Categorias"))
@@ -340,6 +341,54 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(4), 0, dp(10))
         })
+    }
+
+    private fun addBrandBanner(parent: LinearLayout) {
+        val banner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(12), dp(12))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(231, 238, 255), Color.rgb(248, 239, 255))
+            ).apply { cornerRadius = dp(22).toFloat() }
+            elevation = dp(1).toFloat()
+        }
+        banner.addView(FeatureIconView(this, "folder"), LinearLayout.LayoutParams(dp(54), dp(54)))
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(8), 0)
+        }
+        labels.addView(TextView(this).apply {
+            text = "Files Media"
+            textSize = 18f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(textColor)
+            includeFontPadding = false
+        })
+        labels.addView(TextView(this).apply {
+            text = "Tudo organizado num só lugar"
+            textSize = 12f
+            setTextColor(secondaryColor)
+            setPadding(0, dp(5), 0, 0)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        banner.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        banner.addView(TextView(this).apply {
+            text = "OFFLINE"
+            textSize = 10f
+            letterSpacing = 0.06f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(156, 83, 20))
+            background = rounded(Color.rgb(255, 239, 215), 16)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+            contentDescription = "Concebido para funcionar sem Internet"
+        })
+        parent.addView(banner, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(82)
+        ).apply { bottomMargin = dp(10) })
     }
 
     private fun addRecentCarousel(parent: LinearLayout) {
@@ -416,11 +465,8 @@ class MainActivity : AppCompatActivity() {
         preview.addView(image, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        val fallback = TextView(this).apply {
-            text = iconFor(entry)
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(primaryColor)
+        val fallback = FeatureIconView(this, iconKeyForEntry(entry)).apply {
+            contentDescription = "Pré-visualização de " + entry.name
         }
         preview.addView(fallback, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
@@ -476,10 +522,10 @@ class MainActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        val favorites = collectionTile("☆", "Marcados com estrela", "Ficheiros guardados") {
+        val favorites = collectionTile("star", "Marcados com estrela", "Ficheiros guardados") {
             openCategory("starred", "Marcados com estrela")
         }
-        val largeFiles = collectionTile("▤", "Ficheiros grandes", "Revê antes de eliminar") {
+        val largeFiles = collectionTile("large", "Ficheiros grandes", "Revê antes de eliminar") {
             openCategory("large", "Ficheiros grandes")
         }
         row.addView(favorites, LinearLayout.LayoutParams(0, dp(94), 1f).apply {
@@ -508,12 +554,7 @@ class MainActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { action() }
         }
-        tile.addView(TextView(this).apply {
-            text = icon
-            textSize = 26f
-            setTextColor(primaryColor)
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(dp(34), dp(50)))
+        tile.addView(FeatureIconView(this, icon), LinearLayout.LayoutParams(dp(42), dp(42)))
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(6), 0, 0, 0)
@@ -716,17 +757,17 @@ class MainActivity : AppCompatActivity() {
         page.addView(cleanupActionCard(
             "Ficheiros grandes",
             "Revê vídeos e outros ficheiros grandes antes de os eliminar.",
-            "▤"
+            "large"
         ) { openCategory("large", "Ficheiros grandes") })
         page.addView(cleanupActionCard(
             "Vídeos",
             "Os vídeos podem ocupar bastante espaço no dispositivo.",
-            "▶"
+            "video"
         ) { openCategory("videos", "Vídeos") })
         page.addView(cleanupActionCard(
             "Transferências",
             "Confirma se ainda precisas dos ficheiros recebidos.",
-            "↓"
+            "download"
         ) { openCategory("downloads", "Transferências") })
         page.addView(TextView(this).apply {
             text = "Nada será apagado automaticamente. Revê os ficheiros e confirma cada eliminação."
@@ -746,12 +787,7 @@ class MainActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { action() }
         }
-        card.addView(TextView(this).apply {
-            text = icon
-            textSize = 28f
-            gravity = Gravity.CENTER
-            setTextColor(primaryColor)
-        }, LinearLayout.LayoutParams(dp(48), dp(54)))
+        card.addView(FeatureIconView(this, icon), LinearLayout.LayoutParams(dp(52), dp(52)))
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), 0, dp(4), 0)
@@ -881,16 +917,16 @@ class MainActivity : AppCompatActivity() {
     private fun addCategoryGrid(parent: LinearLayout) {
         val rows = listOf(
             listOf(
-                CategoryInfo("images", "Imagens", "🖼", "Fotos e imagens"),
-                CategoryInfo("videos", "Vídeos", "🎬", "Os teus vídeos")
+                CategoryInfo("images", "Imagens", "image", "Fotos e imagens"),
+                CategoryInfo("videos", "Vídeos", "video", "Os teus vídeos")
             ),
             listOf(
-                CategoryInfo("audio", "Áudio", "♫", "Música e sons"),
-                CategoryInfo("documents", "Documentos", "📄", "PDF e documentos")
+                CategoryInfo("audio", "Áudio", "audio", "Música e sons"),
+                CategoryInfo("documents", "Documentos", "document", "PDF e documentos")
             ),
             listOf(
-                CategoryInfo("downloads", "Transferências", "⬇", "Ficheiros recebidos"),
-                CategoryInfo("all", "Todos os ficheiros", "📁", "Explorar conteúdos")
+                CategoryInfo("downloads", "Transferências", "download", "Ficheiros recebidos"),
+                CategoryInfo("all", "Todos os ficheiros", "folder", "Explorar conteúdos")
             )
         )
         rows.forEach { rowInfo ->
@@ -906,17 +942,31 @@ class MainActivity : AppCompatActivity() {
             }
             parent.addView(row)
         }
-        val browse = TextView(this).apply {
-            text = "📂   Explorar armazenamento e pastas"
-            textSize = 15f
-            setTextColor(textColor)
+        val browse = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(Color.WHITE, 18)
-            setPadding(dp(18), 0, dp(18), 0)
+            setPadding(dp(14), 0, dp(14), 0)
             isClickable = true
             isFocusable = true
+            background = selectableBackground()
             setOnClickListener { openStoragePicker() }
         }
+        browse.addView(FeatureIconView(this, "folder"), LinearLayout.LayoutParams(dp(42), dp(42)))
+        browse.addView(TextView(this).apply {
+            text = "Explorar armazenamento e pastas"
+            textSize = 15f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(textColor)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        browse.addView(TextView(this).apply {
+            text = "›"
+            textSize = 28f
+            setTextColor(secondaryColor)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT))
         parent.addView(browse, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ).apply { bottomMargin = dp(22) })
@@ -943,12 +993,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        upper.addView(TextView(this).apply {
-            text = info.icon
-            textSize = if (info.icon == "♫") 26f else 23f
-            setTextColor(primaryColor)
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(dp(38), dp(40)))
+        upper.addView(FeatureIconView(this, info.icon), LinearLayout.LayoutParams(dp(44), dp(44)))
         upper.addView(TextView(this).apply {
             text = info.title
             textSize = 15f
@@ -989,12 +1034,21 @@ class MainActivity : AppCompatActivity() {
             return card
         }
         val used = (total - free).coerceAtLeast(0L)
-        card.addView(TextView(this).apply {
+        val storageHeading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        storageHeading.addView(FeatureIconView(this, "storage"), LinearLayout.LayoutParams(dp(44), dp(44)))
+        storageHeading.addView(TextView(this).apply {
             text = "Armazenamento interno"
             textSize = 16f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(textColor)
-        })
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(storageHeading, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+        ))
         card.addView(TextView(this).apply {
             text = StorageRepository.formatSize(used) + " utilizados de " + StorageRepository.formatSize(total)
             textSize = 13f
@@ -1849,17 +1903,20 @@ class MainActivity : AppCompatActivity() {
         return permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
     }
 
-    private fun iconFor(entry: MediaEntry): String {
-        if (entry.isDirectory) return "📁"
+    private fun iconKeyForEntry(entry: MediaEntry): String {
+        if (entry.isDirectory) return "folder"
         val mime = (entry.mimeType ?: guessMime(entry.name)).lowercase(Locale.ROOT)
+        val name = entry.name.lowercase(Locale.ROOT)
         return when {
-            mime.startsWith("image/") -> "🖼"
-            mime.startsWith("video/") -> "▶"
-            mime.startsWith("audio/") -> "♫"
-            mime == "application/pdf" -> "PDF"
-            mime.contains("zip") || mime.contains("compressed") || entry.name.endsWith(".rar", true) -> "ZIP"
-            entry.name.endsWith(".apk", true) -> "APK"
-            else -> "📄"
+            mime.startsWith("image/") || name.endsWith(".jpg") || name.endsWith(".jpeg") ||
+                name.endsWith(".png") || name.endsWith(".webp") -> "image"
+            mime.startsWith("video/") || name.endsWith(".mp4") || name.endsWith(".mkv") -> "video"
+            mime.startsWith("audio/") || name.endsWith(".mp3") || name.endsWith(".flac") -> "audio"
+            mime == "application/pdf" || name.endsWith(".pdf") -> "document"
+            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") -> "large"
+            name.endsWith(".apk") -> "apps"
+            name.endsWith(".download") || name.endsWith(".part") -> "download"
+            else -> "document"
         }
     }
 

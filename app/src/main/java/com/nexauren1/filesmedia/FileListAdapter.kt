@@ -117,7 +117,7 @@ class FileListAdapter(
             scaleType = ImageView.ScaleType.CENTER_CROP
             visibility = View.GONE
         }
-        val fallback = iconLabel()
+        val fallback = FeatureIconView(context, "document")
         thumbnailContainer.addView(thumbnail, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
@@ -158,7 +158,7 @@ class FileListAdapter(
             scaleType = ImageView.ScaleType.CENTER_CROP
             visibility = View.GONE
         }
-        val fallback = iconLabel().apply { textSize = 30f }
+        val fallback = FeatureIconView(context, "document")
         preview.addView(thumbnail, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
@@ -195,14 +195,6 @@ class FileListAdapter(
         return EntryHolder(card, thumbnail, fallback, name, details, menu)
     }
 
-    private fun iconLabel(): TextView = TextView(context).apply {
-        gravity = Gravity.CENTER
-        textSize = 24f
-        setTextColor(Color.rgb(80, 88, 174))
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        includeFontPadding = false
-    }
-
     private fun fileNameLabel(size: Float): TextView = TextView(context).apply {
         textSize = size
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -234,7 +226,7 @@ class FileListAdapter(
         holder.boundUri = entry.uri
         holder.name.text = entry.name
         holder.details.text = if (entry.isDirectory) "Pasta" else detailText(entry)
-        holder.fallback.text = fallbackIcon(entry)
+        holder.fallback.setKind(iconKind(entry))
         holder.thumbnail.setImageDrawable(null)
         holder.thumbnail.tag = entry.uri
         holder.thumbnail.visibility = View.GONE
@@ -296,21 +288,18 @@ class FileListAdapter(
         return if (date.isEmpty()) size else size + " • " + date
     }
 
-    private fun fallbackIcon(entry: MediaEntry): String {
-        if (entry.isDirectory) return "📁"
+    private fun iconKind(entry: MediaEntry): String {
+        if (entry.isDirectory) return "folder"
         val mime = (entry.mimeType ?: "").lowercase(Locale.ROOT)
         val name = entry.name.lowercase(Locale.ROOT)
         return when {
-            mime.startsWith("image/") || name.hasExtension("jpg", "jpeg", "png", "gif", "webp", "heic") -> "▧"
-            mime.startsWith("video/") || name.hasExtension("mp4", "mkv", "webm", "mov", "avi", "3gp") -> "▶"
-            mime.startsWith("audio/") || name.hasExtension("mp3", "m4a", "aac", "ogg", "flac", "wav", "opus") -> "♫"
-            mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
-            name.endsWith(".apk") -> "APK"
-            name.hasExtension("zip", "rar", "7z", "tar", "gz") -> "ZIP"
-            name.hasExtension("doc", "docx", "odt") -> "DOC"
-            name.hasExtension("xls", "xlsx", "csv") -> "XLS"
-            name.hasExtension("ppt", "pptx") -> "PPT"
-            else -> "▤"
+            mime.startsWith("image/") || name.hasExtension("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif") -> "image"
+            mime.startsWith("video/") || name.hasExtension("mp4", "mkv", "webm", "mov", "avi", "3gp", "m4v") -> "video"
+            mime.startsWith("audio/") || name.hasExtension("mp3", "m4a", "aac", "ogg", "flac", "wav", "opus", "wma") -> "audio"
+            mime == "application/pdf" || name.endsWith(".pdf") -> "document"
+            name.endsWith(".apk") -> "apps"
+            name.hasExtension("zip", "rar", "7z", "tar", "gz") -> "large"
+            else -> "document"
         }
     }
 
@@ -330,7 +319,7 @@ class FileListAdapter(
     class EntryHolder(
         itemView: View,
         val thumbnail: ImageView,
-        val fallback: TextView,
+        val fallback: FeatureIconView,
         val name: TextView,
         val details: TextView,
         val menu: TextView

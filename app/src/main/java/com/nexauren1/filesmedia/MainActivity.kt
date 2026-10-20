@@ -39,6 +39,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +66,20 @@ class MainActivity : AppCompatActivity() {
     private var pendingTransferEntry: MediaEntry? = null
     private var pendingMove = false
     private var sortMode = "date"
+    private var activeSearchQuery = ""
+
+    private fun isGridModeEnabled(): Boolean =
+        getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+            .getBoolean("grid_view_enabled", false)
+
+    private fun setGridModeEnabled(enabled: Boolean) {
+        getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+            .edit().putBoolean("grid_view_enabled", enabled).apply()
+        reloadCurrentPage()
+    }
+
+    private fun fileLayoutManager(): RecyclerView.LayoutManager =
+        if (isGridModeEnabled()) GridLayoutManager(this, 2) else LinearLayoutManager(this)
 
     private val pdfPicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -208,6 +223,7 @@ class MainActivity : AppCompatActivity() {
     private fun showOverflowMenu(anchor: View) {
         val menu = PopupMenu(this, anchor)
         menu.menu.add("Abrir um PDF…")
+        menu.menu.add(if (isGridModeEnabled()) "Mudar para lista" else "Mudar para grelha")
         menu.menu.add("Ordenar: mais recentes")
         menu.menu.add("Ordenar: nome A–Z")
         menu.menu.add("Ordenar: maior tamanho")
@@ -217,6 +233,8 @@ class MainActivity : AppCompatActivity() {
         menu.setOnMenuItemClickListener {
             when (it.title.toString()) {
                 "Abrir um PDF…" -> openPdfPicker()
+                "Mudar para grelha" -> setGridModeEnabled(true)
+                "Mudar para lista" -> setGridModeEnabled(false)
                 "Ordenar: mais recentes" -> { sortMode = "date"; reloadCurrentPage() }
                 "Ordenar: nome A–Z" -> { sortMode = "name"; reloadCurrentPage() }
                 "Ordenar: maior tamanho" -> { sortMode = "size"; reloadCurrentPage() }
@@ -1072,12 +1090,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun openCategory(category: String, title: String) {
         directoryStack.clear()
+        activeSearchQuery = ""
         renderCategory(category, title)
     }
 
     private fun renderCategory(category: String, title: String, searchQuery: String = "") {
         pageKind = category
         pageTitle = title
+        activeSearchQuery = searchQuery
         buildToolbar(title, true)
         contentHost.removeAllViews()
         val page = LinearLayout(this).apply {
@@ -1114,11 +1134,20 @@ class MainActivity : AppCompatActivity() {
         }
         val frame = FrameLayout(this)
         val recycler = RecyclerView(this).apply {
-            layoutManager = LinearLayoutManager(this@MainActivity)
+            layoutManager = fileLayoutManager()
             clipToPadding = false
-            setPadding(dp(12), dp(4), dp(12), dp(12))
-            adapter = FileListAdapter(this@MainActivity, { entry -> openEntry(entry) },
-                { entry, anchor -> showEntryMenu(entry, anchor) })
+            setPadding(
+                if (isGridModeEnabled()) dp(7) else dp(12),
+                dp(4),
+                if (isGridModeEnabled()) dp(7) else dp(12),
+                dp(12)
+            )
+            adapter = FileListAdapter(
+                this@MainActivity,
+                { entry -> openEntry(entry) },
+                { entry, anchor -> showEntryMenu(entry, anchor) },
+                initialGridMode = isGridModeEnabled()
+            )
         }
         currentAdapter = recycler.adapter as FileListAdapter
         val empty = emptyMessage("A carregar ficheiros…")
@@ -1221,6 +1250,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             hint = "Nome do ficheiro"
             setSingleLine(true)
+            setText(activeSearchQuery)
+            setSelection(text.length)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
         AlertDialog.Builder(this)
@@ -1256,17 +1287,27 @@ class MainActivity : AppCompatActivity() {
         contentHost.removeAllViews()
         val frame = FrameLayout(this)
         val recycler = RecyclerView(this).apply {
-            layoutManager = LinearLayoutManager(this@MainActivity)
-            setPadding(dp(12), dp(4), dp(12), dp(12))
+            layoutManager = fileLayoutManager()
+            setPadding(
+                if (isGridModeEnabled()) dp(7) else dp(12),
+                dp(4),
+                if (isGridModeEnabled()) dp(7) else dp(12),
+                dp(12)
+            )
             clipToPadding = false
-            adapter = FileListAdapter(this@MainActivity, { entry ->
-                if (entry.isDirectory && entry.document != null) {
-                    directoryStack.add(entry.document)
-                    renderCurrentFolder()
-                } else {
-                    openEntry(entry)
-                }
-            }, { entry, anchor -> showEntryMenu(entry, anchor) })
+            adapter = FileListAdapter(
+                this@MainActivity,
+                { entry ->
+                    if (entry.isDirectory && entry.document != null) {
+                        directoryStack.add(entry.document)
+                        renderCurrentFolder()
+                    } else {
+                        openEntry(entry)
+                    }
+                },
+                { entry, anchor -> showEntryMenu(entry, anchor) },
+                initialGridMode = isGridModeEnabled()
+            )
         }
         currentAdapter = recycler.adapter as FileListAdapter
         val empty = emptyMessage("A abrir esta pasta…")
@@ -1291,7 +1332,7 @@ class MainActivity : AppCompatActivity() {
                             isDirectory = file.isDirectory,
                             document = file
                         )
-                    }.sortedWith(compareByDescending<MediaEntry> { it.isDirectory }.thenBy { it.name.lowercase(Locale.ROOT) })
+                    }.let { sortEntries(it) }
                 } catch (_: Exception) {
                     emptyList()
                 }
@@ -1575,7 +1616,7 @@ class MainActivity : AppCompatActivity() {
             pageKind == "home" -> renderHome()
             pageKind == "clean" -> renderCleanupPage()
             pageKind == "storage" -> renderStoragePage()
-            else -> renderCategory(pageKind, pageTitle)
+            else -> renderCategory(pageKind, pageTitle, activeSearchQuery)
         }
     }
 

@@ -1126,7 +1126,7 @@ class MainActivity : AppCompatActivity() {
             val entries = withContext(Dispatchers.IO) {
                 val sourceCategory = if (category == "starred" || category == "large") "all" else category
                 val found = repository.query(sourceCategory, searchQuery)
-                val combined = if (category == "documents") {
+                val combined = if (category == "documents" || category == "starred" || category == "large") {
                     (getRecentPdfEntries(searchQuery) + found).distinctBy { it.uri.toString() }
                 } else found
                 val filtered = when (category) {

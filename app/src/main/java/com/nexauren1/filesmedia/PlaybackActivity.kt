@@ -58,6 +58,7 @@ class PlaybackActivity : AppCompatActivity() {
     private val textColor = Color.rgb(30, 31, 40)
     private val secondaryColor = Color.rgb(101, 102, 116)
 
+    private lateinit var headerTitleView: TextView
     private lateinit var audioTitle: TextView
     private lateinit var audioSubtitle: TextView
     private lateinit var playPauseButton: TextView
@@ -90,9 +91,9 @@ class PlaybackActivity : AppCompatActivity() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            if (::audioTitle.isInitialized) {
-                audioTitle.text = mediaItem?.mediaMetadata?.title?.toString() ?: currentTitle
-            }
+            val nextTitle = mediaItem?.mediaMetadata?.title?.toString() ?: currentTitle
+            if (::headerTitleView.isInitialized) headerTitleView.text = nextTitle
+            if (::audioTitle.isInitialized) audioTitle.text = nextTitle
             updateAudioProgress()
         }
     }
@@ -131,13 +132,14 @@ class PlaybackActivity : AppCompatActivity() {
         val headerTextColor = if (isVideoMode) Color.WHITE else textColor
         header.addView(headerAction("‹", "Voltar", headerTextColor) { finish() },
             LinearLayout.LayoutParams(dp(48), dp(52)))
-        header.addView(TextView(this).apply {
+        headerTitleView = TextView(this).apply {
             text = currentTitle
             textSize = 16f
             setTextColor(headerTextColor)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        header.addView(headerTitleView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val more = headerAction("⋮", "Opções de reprodução", headerTextColor) { }
         more.setOnClickListener { showPlaybackMenu(more) }
         header.addView(more, LinearLayout.LayoutParams(dp(44), dp(52)))
@@ -151,6 +153,7 @@ class PlaybackActivity : AppCompatActivity() {
             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setBackgroundColor(Color.BLACK)
             setKeepContentOnPlayerReset(true)
+            keepScreenOn = true
             setShowSubtitleButton(true)
         }
 
@@ -400,7 +403,7 @@ class PlaybackActivity : AppCompatActivity() {
         }
         menu.menu.add(0, 1, 1, if (player?.shuffleModeEnabled == true) "Desativar reprodução aleatória" else "Ativar reprodução aleatória")
         menu.menu.add(0, 2, 2, "Modo de repetição…")
-        menu.menu.add(0, 3, 3, "Legendas externas…")
+        if (isVideoMode) menu.menu.add(0, 3, 3, "Legendas externas…")
         menu.menu.add(0, 4, 4, "Temporizador de suspensão…")
         menu.menu.add(0, 5, 5, "Informações do ficheiro")
         menu.setOnMenuItemClickListener {

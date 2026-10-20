@@ -32,6 +32,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -60,6 +61,7 @@ class PlaybackActivity : AppCompatActivity() {
     private var currentTitle = ""
     private var seeking = false
     private var sleepTimer: Runnable? = null
+    private var videoResizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     private val handler = Handler(Looper.getMainLooper())
     private val backgroundColor = Color.rgb(247, 246, 252)
     private val primaryColor = Color.rgb(80, 88, 174)
@@ -473,7 +475,7 @@ class PlaybackActivity : AppCompatActivity() {
 
     private fun showVideoFitOptions() {
         val options = arrayOf("Ajustar ao vídeo", "Preencher e cortar", "Esticar para preencher")
-        val current = when (playerView.resizeMode) {
+        val current = when (videoResizeMode) {
             androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> 1
             androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> 2
             else -> 0
@@ -481,11 +483,12 @@ class PlaybackActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Enquadramento do vídeo")
             .setSingleChoiceItems(options, current) { dialog, which ->
-                playerView.resizeMode = when (which) {
+                videoResizeMode = when (which) {
                     1 -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     2 -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
                     else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
+                playerView.setResizeMode(videoResizeMode)
                 dialog.dismiss()
             }
             .setNegativeButton("Fechar", null)

@@ -65,6 +65,8 @@ class MainActivity : AppCompatActivity() {
     private val directoryStack = ArrayList<DocumentFile>()
     private var pendingTransferEntry: MediaEntry? = null
     private var pendingMove = false
+    private var pendingBatchDelete = false
+    private var pendingBatchSafDeleteEntries: List<MediaEntry> = emptyList()
     private var sortMode = "date"
     private var activeSearchQuery = ""
 
@@ -140,7 +142,25 @@ class MainActivity : AppCompatActivity() {
     private val deleteRequestLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
+        if (pendingBatchDelete) {
+            val safEntries = pendingBatchSafDeleteEntries
+            pendingBatchDelete = false
+            pendingBatchSafDeleteEntries = emptyList()
+            if (result.resultCode == RESULT_OK) {
+                lifecycleScope.launch {
+                    val deletedSaf = deleteEntriesDirect(safEntries)
+                    toast(if (safEntries.isEmpty() || deletedSaf == safEntries.size) {
+                        "Eliminação concluída."
+                    } else {
+                        "Parte dos ficheiros foi eliminada. Alguns fornecedores recusaram o acesso."
+                    })
+                    currentAdapter?.clearSelection()
+                    reloadCurrentPage()
+                }
+            } else {
+                toast("A eliminação foi cancelada.")
+            }
+        } else if (result.resultCode == RESULT_OK) {
             toast("Ficheiro eliminado.")
         } else {
             toast("A eliminação foi cancelada.")
@@ -1132,6 +1152,10 @@ class MainActivity : AppCompatActivity() {
                 })
             }
         }
+        val selectionUi = createSelectionBar()
+        page.addView(selectionUi.container, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
+        ).apply { setMargins(dp(12), dp(6), dp(12), dp(2)) })
         val frame = FrameLayout(this)
         val recycler = RecyclerView(this).apply {
             layoutManager = fileLayoutManager()
@@ -1146,7 +1170,10 @@ class MainActivity : AppCompatActivity() {
                 this@MainActivity,
                 { entry -> openEntry(entry) },
                 { entry, anchor -> showEntryMenu(entry, anchor) },
-                initialGridMode = isGridModeEnabled()
+                initialGridMode = isGridModeEnabled(),
+                onSelectionChanged = { selected, active ->
+                    updateSelectionBar(selectionUi, selected, active)
+                }
             )
         }
         currentAdapter = recycler.adapter as FileListAdapter
@@ -1285,6 +1312,13 @@ class MainActivity : AppCompatActivity() {
         pageTitle = directory.name ?: "Armazenamento"
         buildToolbar(pageTitle, true)
         contentHost.removeAllViews()
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val selectionUi = createSelectionBar()
+        page.addView(selectionUi.container, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
+        ).apply { setMargins(dp(12), dp(6), dp(12), dp(2)) })
         val frame = FrameLayout(this)
         val recycler = RecyclerView(this).apply {
             layoutManager = fileLayoutManager()
@@ -1306,7 +1340,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 },
                 { entry, anchor -> showEntryMenu(entry, anchor) },
-                initialGridMode = isGridModeEnabled()
+                initialGridMode = isGridModeEnabled(),
+                onSelectionChanged = { selected, active ->
+                    updateSelectionBar(selectionUi, selected, active)
+                }
             )
         }
         currentAdapter = recycler.adapter as FileListAdapter
@@ -1317,7 +1354,12 @@ class MainActivity : AppCompatActivity() {
         frame.addView(empty, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        contentHost.addView(frame)
+        page.addView(frame, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        contentHost.addView(page, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
         lifecycleScope.launch {
             val entries = withContext(Dispatchers.IO) {
                 try {
@@ -1478,6 +1520,160 @@ class MainActivity : AppCompatActivity() {
         toast(if (added) "Adicionado aos favoritos." else "Removido dos favoritos.")
         if (pageKind == "starred") reloadCurrentPage()
     }
+
+    private data class SelectionBarUi(
+        val container: LinearLayout,
+        val count: TextView
+    )
+
+    private fun createSelectionBar(): SelectionBarUi {
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(4), dp(6), dp(4))
+            background = rounded(Color.rgb(228, 232, 255), 16)
+            visibility = View.GONE
+        }
+        val count = TextView(this).apply {
+            text = "0 selecionados"
+            textSize = 13f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(primaryColor)
+            maxLines = 1
+        }
+        bar.addView(count, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        bar.addView(selectionActionButton("↗", "Partilhar selecionados") {
+            shareSelectedEntries(currentAdapter?.selectedEntries().orEmpty())
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        bar.addView(selectionActionButton("⋮", "Mais ações") { showSelectionActions(it) },
+            LinearLayout.LayoutParams(dp(44), dp(44)))
+        bar.addView(selectionActionButton("✕", "Cancelar seleção") {
+            currentAdapter?.clearSelection()
+        }, LinearLayout.LayoutParams(dp(38), dp(44)))
+        return SelectionBarUi(bar, count)
+    }
+
+    private fun selectionActionButton(symbol: String, label: String, action: (View) -> Unit): TextView =
+        TextView(this).apply {
+            text = symbol
+            textSize = if (symbol == "↗") 23f else 24f
+            gravity = Gravity.CENTER
+            setTextColor(primaryColor)
+            contentDescription = label
+            isClickable = true
+            isFocusable = true
+            background = selectableBackground()
+            setOnClickListener { action(this) }
+        }
+
+    private fun updateSelectionBar(
+        ui: SelectionBarUi,
+        selected: List<MediaEntry>,
+        active: Boolean
+    ) {
+        ui.count.text = selected.size.toString() +
+            if (selected.size == 1) " ficheiro selecionado" else " ficheiros selecionados"
+        ui.container.visibility = if (active) View.VISIBLE else View.GONE
+    }
+
+    private fun showSelectionActions(anchor: View) {
+        val adapter = currentAdapter ?: return
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(0, 1, 0, "Selecionar tudo")
+        menu.menu.add(0, 2, 1, "Partilhar selecionados")
+        menu.menu.add(0, 3, 2, "Eliminar selecionados")
+        menu.menu.add(0, 4, 3, "Cancelar seleção")
+        menu.setOnMenuItemClickListener {
+            when (it.itemId) {
+                1 -> adapter.selectAll()
+                2 -> shareSelectedEntries(adapter.selectedEntries())
+                3 -> deleteSelectedEntries(adapter.selectedEntries())
+                4 -> adapter.clearSelection()
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun shareSelectedEntries(entries: List<MediaEntry>) {
+        when (entries.size) {
+            0 -> toast("Seleciona primeiro pelo menos um ficheiro.")
+            1 -> shareEntry(entries.first())
+            else -> {
+                try {
+                    val uris = ArrayList(entries.map { it.uri })
+                    val mimeTypes = entries.map { it.mimeType ?: guessMime(it.name) }.distinct()
+                    val clip = android.content.ClipData.newUri(contentResolver, entries.first().name, entries.first().uri)
+                    entries.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it.uri)) }
+                    val share = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                        type = if (mimeTypes.size == 1) mimeTypes.first() else "*/*"
+                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                        clipData = clip
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(share, "Partilhar ficheiros"))
+                } catch (_: Exception) {
+                    toast("Não foi possível partilhar os ficheiros selecionados.")
+                }
+            }
+        }
+    }
+
+    private fun deleteSelectedEntries(entries: List<MediaEntry>) {
+        if (entries.isEmpty()) {
+            toast("Seleciona primeiro pelo menos um ficheiro.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (entries.size == 1) "Eliminar ficheiro?" else "Eliminar ${entries.size} ficheiros?")
+            .setMessage("Esta ação não pode ser anulada. O Android poderá pedir autorização para eliminar os ficheiros.")
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Eliminar") { _, _ ->
+                val mediaEntries = entries.filter { it.source != EntrySource.SAF }
+                val safEntries = entries.filter { it.source == EntrySource.SAF }
+                if (mediaEntries.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        val request = MediaStore.createDeleteRequest(
+                            contentResolver, mediaEntries.map { it.uri }
+                        )
+                        pendingBatchDelete = true
+                        pendingBatchSafDeleteEntries = safEntries
+                        deleteRequestLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+                    } catch (_: Exception) {
+                        pendingBatchDelete = false
+                        pendingBatchSafDeleteEntries = emptyList()
+                        toast("O Android não autorizou a eliminação em lote.")
+                    }
+                } else {
+                    lifecycleScope.launch {
+                        val deleted = deleteEntriesDirect(entries)
+                        toast(if (deleted == entries.size) {
+                            "Eliminação concluída: $deleted ficheiros."
+                        } else {
+                            "Eliminados $deleted de ${entries.size} ficheiros."
+                        })
+                        currentAdapter?.clearSelection()
+                        reloadCurrentPage()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private suspend fun deleteEntriesDirect(entries: List<MediaEntry>): Int =
+        withContext(Dispatchers.IO) {
+            entries.count { entry ->
+                try {
+                    if (entry.source == EntrySource.SAF) {
+                        entry.document?.delete() == true
+                    } else {
+                        contentResolver.delete(entry.uri, null, null) > 0
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        }
 
     private fun shareEntry(entry: MediaEntry) {
         try {

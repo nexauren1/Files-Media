@@ -1,59 +1,74 @@
 # Files Media
 
-**Um só lugar para os teus ficheiros, música, vídeos e PDFs.**
+**Um só lugar para ficheiros, música, vídeos e PDFs.**
 
-Files Media é um projeto Android gratuito que prioriza conquistar utilizadores através de utilidade real, simplicidade, privacidade e bom desempenho — não monetização.
+Files Media é uma aplicação Android gratuita em desenvolvimento. O objetivo é conquistar público com utilidade real, simplicidade, privacidade e bom desempenho — não maximizar receitas.
 
-## Objetivos do projeto
+## O que estamos a construir
 
-- Uma experiência simples, inspirada nos bons padrões de gestores de ficheiros conhecidos, sem copiar marcas, ícones ou ativos de outras aplicações.
-- Categorias para imagens, vídeos, áudio, documentos, transferências e ficheiros recentes.
-- Reprodução de áudio e vídeo com AndroidX Media3, incluindo uma sessão multimédia para reprodução em segundo plano.
-- Leitor PDF inicial baseado no PdfRenderer integrado no Android.
-- Exploração de pastas e operações de ficheiros utilizando o Storage Access Framework.
-- Interface em português, adaptável e pensada para dispositivos modestos.
-- Sem conta obrigatória e sem serviços remotos necessários para as funções principais.
-- Sem anúncios como prioridade inicial. A meta é construir confiança e conquistar público.
+### Gestor de ficheiros
+- Categorias para imagens, vídeos, áudio, documentos, transferências e todos os ficheiros acessíveis.
+- Pesquisa por nome e ordenação por data, nome ou tamanho.
+- Favoritos, ficheiros grandes, recentes e resumo de armazenamento.
+- Abrir, partilhar, mudar nome, copiar, mover e eliminar, respeitando as permissões concedidas pelo Android.
+- Exploração de pastas com o Storage Access Framework.
+
+### Música e vídeo
+- Reprodução através do AndroidX Media3.
+- Fila de reprodução para itens de áudio/vídeo descobertos ou selecionados.
+- Controlos de áudio com avanço/retrocesso e barra de progresso.
+- Velocidade ajustável, repetição, reprodução aleatória e temporizador de suspensão.
+- Seleção de legendas externas em vídeo (SRT/VTT, conforme o tipo de ficheiro e o descodificador).
+- Reprodução em segundo plano através de uma sessão multimédia.
+
+### PDF
+- Abrir PDFs através do seletor de documentos do Android.
+- Guardar uma lista local dos PDFs escolhidos e restaurar a última página lida.
+- Zoom por pinça, salto direto para página, partilha e opção de abrir noutro leitor.
+- Renderização com o PdfRenderer do Android, sem acrescentar um motor PDF grande ao MVP.
+
+**Nota importante:** alguns PDFs e ficheiros da pasta Downloads não aparecem no índice MediaStore em versões modernas do Android. Por isso, o ecrã Documentos oferece também a opção **Abrir PDF do dispositivo**; os documentos escolhidos ficam disponíveis em Recentes e na lista de PDFs.
+
+## Interface e privacidade
+
+- Interface em português, com pesquisa no topo, cartões de recentes, categorias, coleções e armazenamento.
+- Sem conta obrigatória e sem servidor necessário para as funções principais.
+- Sem anúncios como prioridade inicial; as decisões devem ajudar a conquistar e manter utilizadores.
+- As pastas são acedidas através dos mecanismos permitidos pelo Android. A aplicação não promete acesso irrestrito a diretórios protegidos do sistema.
+- Nada deve ser eliminado automaticamente: as sugestões de limpeza deixam o utilizador rever e confirmar as ações.
 
 ## Estado atual
 
-Este repositório contém a **primeira fundação técnica / MVP em desenvolvimento**. Ainda necessita de compilação e testes em dispositivos reais antes de ser considerado pronto para publicação.
-
-Implementado nesta base:
+O projeto está em desenvolvimento e ainda requer testes em dispositivos físicos. O repositório contém:
 - Projeto Android nativo em Kotlin.
-- Ecrã inicial com categorias e resumo do armazenamento.
-- Consulta de ficheiros indexados pelo MediaStore.
-- Navegação de pastas com o seletor de documentos do Android.
-- Ações de abrir, partilhar, mudar nome, copiar, mover e eliminar com permissões do sistema quando aplicável.
-- Reprodução de áudio/vídeo com Media3 e serviço de sessão multimédia.
-- Renderização de páginas PDF com o PdfRenderer do sistema.
-- Fluxo de compilação automática no GitHub Actions.
+- Leitor multimédia baseado em Media3.
+- Navegação de pastas e operações de ficheiros.
+- Leitor PDF baseado no PdfRenderer.
+- Ecrãs de armazenamento e sugestões de limpeza.
+- Workflow GitHub Actions para testar e compilar um APK de depuração.
 
-## Requisitos de desenvolvimento
+As funcionalidades assinaladas no código não devem ser consideradas validadas apenas porque compilam. Os próximos passos são verificar permissões e PDFs em diferentes versões do Android, testar formatos reais de áudio/vídeo, resolver erros de operações de ficheiros e aperfeiçoar a interface.
 
+## Compilação
+
+Requisitos de desenvolvimento:
 - JDK 17
 - Android SDK Platform 36
 - Gradle 8.13
 - Android Studio recente
 
-Abra o repositório no Android Studio e sincronize o Gradle. O workflow GitHub Actions compila o APK de depuração e publica-o como artefacto quando o build passar.
+Abre o repositório no Android Studio e sincroniza o Gradle. A compilação de CI produz um APK de depuração como artefacto temporário; não é uma versão assinada para publicação.
 
-## Privacidade e segurança
+## Naruto e ficheiros de teste
 
-Files Media pede apenas permissões necessárias para descobrir e abrir conteúdo multimédia. Para outros locais de armazenamento, utiliza o seletor de pastas do Android, que permite ao utilizador escolher explicitamente a pasta a que a aplicação terá acesso.
+Podes testar com ficheiros de Naruto que já tenhas no dispositivo e para os quais tenhas direito de reprodução. Não vamos incluir episódios, logótipos, capturas do anime ou imagens protegidas de Naruto nos recursos distribuídos da aplicação. As miniaturas podem ser lidas localmente a partir dos teus próprios ficheiros.
 
-As ações de apagar, renomear e mover podem depender do fornecedor de documentos, da versão do Android e da autorização concedida. Não prometa acesso a todas as pastas protegidas do sistema.
+## Como reportar problemas
 
-## Sobre imagens e testes de multimédia
-
-Os ficheiros pessoais usados para testar a aplicação permanecem no dispositivo de quem testa. Não incluir episódios, imagens ou outros conteúdos de Naruto (ou de outras obras protegidas) nos recursos distribuídos do aplicativo. Os testes podem usar ficheiros locais que o utilizador tem direito de reproduzir.
-
-## Como ajudar
-
-Relata problemas com:
+Inclui, sempre que possível:
 - Modelo e versão do Android.
-- Tipo de ficheiro e origem (MediaStore ou pasta selecionada).
+- Tipo de ficheiro e onde está guardado (MediaStore, Downloads ou pasta escolhida).
 - Passos para reproduzir o problema.
-- Mensagem de erro ou captura de ecrã, sem incluir informação privada.
+- Mensagem de erro e captura de ecrã sem informação privada.
 
-O objetivo é tornar o Files Media útil, rápido, acessível e confiável para o maior número possível de pessoas.
+O nosso critério de sucesso é tornar Files Media útil, leve, bonito, acessível e fiável, conquistando utilizadores através da qualidade.

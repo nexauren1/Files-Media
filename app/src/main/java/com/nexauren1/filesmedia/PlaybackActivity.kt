@@ -5,9 +5,12 @@ import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -17,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.SeekBar
@@ -39,6 +43,10 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.ui.PlayerView
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -61,6 +69,8 @@ class PlaybackActivity : AppCompatActivity() {
     private lateinit var headerTitleView: TextView
     private lateinit var audioTitle: TextView
     private lateinit var audioSubtitle: TextView
+    private lateinit var albumArtImage: ImageView
+    private lateinit var albumArtFallback: TextView
     private lateinit var playPauseButton: TextView
     private lateinit var audioSeekBar: SeekBar
     private lateinit var positionLabel: TextView
@@ -74,9 +84,10 @@ class PlaybackActivity : AppCompatActivity() {
 
     private val progressTicker = object : Runnable {
         override fun run() {
-            if (!isVideoMode && !isFinishing && !isDestroyed) {
-                updateAudioProgress()
-                handler.postDelayed(this, 500L)
+            if (!isFinishing && !isDestroyed) {
+                if (!isVideoMode) updateAudioProgress()
+                saveCurrentPlaybackPosition()
+                handler.postDelayed(this, 4_000L)
             }
         }
     }
@@ -88,6 +99,7 @@ class PlaybackActivity : AppCompatActivity() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             updateAudioProgress()
+            if (playbackState == Player.STATE_ENDED) clearCurrentPlaybackPosition()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -188,19 +200,20 @@ class PlaybackActivity : AppCompatActivity() {
                     val fallbackTitle = queueTitles.getOrNull(index) ?: if (uri == currentUriText) currentTitle
                         else Uri.parse(uri).lastPathSegment ?: "Ficheiro"
                     MediaItem.Builder()
+                        .setMediaId(uri)
                         .setUri(Uri.parse(uri))
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(fallbackTitle).build())
                         .build()
                 }
                 val selectedIndex = uris.indexOf(currentUriText).coerceAtLeast(0)
-                player.setMediaItems(items, selectedIndex, C.TIME_UNSET)
+                val savedPosition = savedPlaybackPosition(Uri.parse(currentUriText))
+                player.setMediaItems(items, selectedIndex, savedPosition)
                 player.prepare()
                 player.playWhenReady = true
-                if (!isVideoMode) {
-                    updateAudioProgress()
-                    handler.removeCallbacks(progressTicker)
-                    handler.post(progressTicker)
-                }
+                loadAudioMetadata(player.currentMediaItem)
+                if (!isVideoMode) updateAudioProgress()
+                handler.removeCallbacks(progressTicker)
+                handler.post(progressTicker)
             } catch (_: Exception) {
                 Toast.makeText(this, "Não foi possível reproduzir este ficheiro.", Toast.LENGTH_LONG).show()
             }
@@ -221,14 +234,24 @@ class PlaybackActivity : AppCompatActivity() {
             ).apply { cornerRadius = dp(30).toFloat() }
             elevation = dp(5).toFloat()
         }
-        artwork.addView(TextView(this).apply {
+        artwork.clipToOutline = true
+        albumArtImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
+            contentDescription = "Capa do álbum"
+        }
+        artwork.addView(albumArtImage, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        albumArtFallback = TextView(this).apply {
             text = "♫"
             textSize = 92f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
             contentDescription = "Ilustração do leitor de música"
-        }, FrameLayout.LayoutParams(
+        }
+        artwork.addView(albumArtFallback, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
         panel.addView(artwork, LinearLayout.LayoutParams(dp(224), dp(224)).apply {
@@ -384,9 +407,13 @@ class PlaybackActivity : AppCompatActivity() {
         positionLabel.text = formatTime(position)
         durationLabel.text = formatTime(duration)
         playPauseButton.text = if (player.isPlaying) "Ⅱ" else "▶"
-        audioTitle.text = player.mediaMetadata.title?.toString() ?: currentTitle
+        if (albumArtFallback.visibility == View.VISIBLE) {
+            audioTitle.text = player.mediaMetadata.title?.toString() ?: currentTitle
+        }
         val currentUri = player.currentMediaItem?.localConfiguration?.uri
-        audioSubtitle.text = currentUri?.lastPathSegment ?: "Reprodução local · sem Internet"
+        if (audioSubtitle.text.isNullOrBlank()) {
+            audioSubtitle.text = currentUri?.lastPathSegment ?: "Reprodução local · sem Internet"
+        }
     }
 
     private fun showPlaybackMenu(anchor: View) {
@@ -406,6 +433,7 @@ class PlaybackActivity : AppCompatActivity() {
         if (isVideoMode) menu.menu.add(0, 3, 3, "Legendas externas…")
         menu.menu.add(0, 4, 4, "Temporizador de suspensão…")
         menu.menu.add(0, 5, 5, "Informações do ficheiro")
+        menu.menu.add(0, 6, 6, if (isVideoMode) "Enquadramento do vídeo…" else "Fila de reprodução…")
         menu.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> {
@@ -417,10 +445,151 @@ class PlaybackActivity : AppCompatActivity() {
                 3 -> subtitlePicker.launch(arrayOf("text/*", "application/x-subrip", "application/octet-stream"))
                 4 -> showSleepTimerOptions()
                 5 -> showMediaInformation()
+                6 -> if (isVideoMode) showVideoFitOptions() else showQueue()
             }
             true
         }
         menu.show()
+    }
+
+    private fun showQueue() {
+        val player = controller ?: return
+        val count = player.mediaItemCount
+        if (count == 0) {
+            Toast.makeText(this, "A fila está vazia.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val titles = (0 until count).map { index ->
+            player.getMediaItemAt(index).mediaMetadata.title?.toString()
+                ?: player.getMediaItemAt(index).localConfiguration?.uri?.lastPathSegment
+                ?: "Ficheiro ${index + 1}"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Fila de reprodução")
+            .setSingleChoiceItems(titles, player.currentMediaItemIndex) { dialog, which ->
+                player.seekToDefaultPosition(which)
+                player.play()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun showVideoFitOptions() {
+        val options = arrayOf("Ajustar ao vídeo", "Preencher e cortar", "Esticar para preencher")
+        val current = when (playerView.resizeMode) {
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> 1
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> 2
+            else -> 0
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Enquadramento do vídeo")
+            .setSingleChoiceItems(options, current) { dialog, which ->
+                playerView.resizeMode = when (which) {
+                    1 -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    2 -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private data class AudioArtwork(
+        val title: String?,
+        val artist: String?,
+        val album: String?,
+        val bitmap: Bitmap?
+    )
+
+    private fun loadAudioMetadata(item: MediaItem?) {
+        if (isVideoMode || item == null) return
+        val uri = item.localConfiguration?.uri ?: return
+        lifecycleScope.launch {
+            val data = withContext(Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this@PlaybackActivity, uri)
+                    val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                        ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                    val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    val bytes = retriever.embeddedPicture
+                    val bitmap = bytes?.let { decodeArtwork(it) }
+                    AudioArtwork(title, artist, album, bitmap)
+                } catch (_: Exception) {
+                    AudioArtwork(null, null, null, null)
+                } finally {
+                    try { retriever.release() } catch (_: Exception) { }
+                }
+            }
+            if (isDestroyed || isFinishing) {
+                data.bitmap?.recycle()
+                return@launch
+            }
+            val visibleTitle = data.title?.takeIf { it.isNotBlank() }
+                ?: item.mediaMetadata.title?.toString()
+                ?: currentTitle
+            audioTitle.text = visibleTitle
+            headerTitleView.text = visibleTitle
+            val subtitle = listOfNotNull(data.artist?.takeIf { it.isNotBlank() }, data.album?.takeIf { it.isNotBlank() })
+                .joinToString(" • ")
+            audioSubtitle.text = subtitle.ifBlank { uri.lastPathSegment ?: "Reprodução local" }
+            if (data.bitmap != null) {
+                albumArtImage.setImageBitmap(data.bitmap)
+                albumArtImage.visibility = View.VISIBLE
+                albumArtFallback.visibility = View.GONE
+            } else {
+                albumArtImage.setImageDrawable(null)
+                albumArtImage.visibility = View.GONE
+                albumArtFallback.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun decodeArtwork(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / sample > 960 || bounds.outHeight / sample > 960) sample *= 2
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.RGB_565
+        })
+    }
+
+    private fun playbackPositionKey(uri: Uri): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray(Charsets.UTF_8))
+        return "position_" + bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun savedPlaybackPosition(uri: Uri): Long =
+        getSharedPreferences("playback_progress", MODE_PRIVATE)
+            .getLong(playbackPositionKey(uri), 0L)
+            .takeIf { it in 1_000L..TimeUnit.HOURS.toMillis(8) }
+            ?: 0L
+
+    private fun saveCurrentPlaybackPosition() {
+        val player = controller ?: return
+        val itemUri = player.currentMediaItem?.localConfiguration?.uri ?: return
+        val preferences = getSharedPreferences("playback_progress", MODE_PRIVATE)
+        val key = playbackPositionKey(itemUri)
+        val duration = player.duration
+        val position = player.currentPosition.coerceAtLeast(0L)
+        if (player.playbackState == Player.STATE_ENDED ||
+            (duration > 0L && duration != C.TIME_UNSET && position >= duration - 2_000L)
+        ) {
+            preferences.edit().remove(key).apply()
+        } else if (position >= 1_000L) {
+            preferences.edit().putLong(key, position).apply()
+        }
+    }
+
+    private fun clearCurrentPlaybackPosition() {
+        val uri = controller?.currentMediaItem?.localConfiguration?.uri ?: return
+        getSharedPreferences("playback_progress", MODE_PRIVATE)
+            .edit().remove(playbackPositionKey(uri)).apply()
     }
 
     private fun showRepeatOptions() {
@@ -538,7 +707,18 @@ class PlaybackActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    override fun onPause() {
+        saveCurrentPlaybackPosition()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        saveCurrentPlaybackPosition()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        saveCurrentPlaybackPosition()
         handler.removeCallbacks(progressTicker)
         sleepTimer?.let { handler.removeCallbacks(it) }
         sleepTimer = null

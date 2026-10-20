@@ -1312,13 +1312,7 @@ class MainActivity : AppCompatActivity() {
         val mime = (entry.mimeType ?: guessMime(entry.name)).lowercase(Locale.ROOT)
         when {
             mime.startsWith("audio/") || mime.startsWith("video/") -> {
-                startActivity(Intent(this, PlaybackActivity::class.java).apply {
-                    putExtra(PlaybackActivity.EXTRA_URI, entry.uri.toString())
-                    putExtra(PlaybackActivity.EXTRA_TITLE, entry.name)
-                    putExtra(PlaybackActivity.EXTRA_IS_VIDEO, mime.startsWith("video/"))
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    data = entry.uri
-                })
+                openMediaEntry(entry, mime.startsWith("video/"))
             }
             mime == "application/pdf" || entry.name.lowercase(Locale.ROOT).endsWith(".pdf") -> {
                 rememberRecentPdf(entry)
@@ -1340,6 +1334,41 @@ class MainActivity : AppCompatActivity() {
                     toast("Não existe uma aplicação para abrir este ficheiro.")
                 }
             }
+        }
+    }
+
+    private fun openMediaEntry(entry: MediaEntry, isVideo: Boolean) {
+        lifecycleScope.launch {
+            val visible = currentVisibleEntries.filter { candidate ->
+                !candidate.isDirectory && (candidate.mimeType ?: guessMime(candidate.name))
+                    .startsWith(if (isVideo) "video/" else "audio/")
+            }
+            val indexed = withContext(Dispatchers.IO) {
+                repository.query(if (isVideo) "videos" else "audio")
+            }
+            val queue = (indexed + visible + entry)
+                .filter { candidate ->
+                    !candidate.isDirectory && (candidate.mimeType ?: guessMime(candidate.name))
+                        .startsWith(if (isVideo) "video/" else "audio/")
+                }
+                .distinctBy { it.uri.toString() }
+            val selectedIndex = queue.indexOfFirst { it.uri == entry.uri }.coerceAtLeast(0)
+            startActivity(Intent(this@MainActivity, PlaybackActivity::class.java).apply {
+                putExtra(PlaybackActivity.EXTRA_URI, entry.uri.toString())
+                putExtra(PlaybackActivity.EXTRA_TITLE, entry.name)
+                putExtra(PlaybackActivity.EXTRA_IS_VIDEO, isVideo)
+                putStringArrayListExtra(
+                    PlaybackActivity.EXTRA_QUEUE_URIS,
+                    ArrayList(queue.map { it.uri.toString() })
+                )
+                putStringArrayListExtra(
+                    PlaybackActivity.EXTRA_QUEUE_TITLES,
+                    ArrayList(queue.map { it.name })
+                )
+                putIntExtra(PlaybackActivity.EXTRA_QUEUE_INDEX, selectedIndex)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                data = entry.uri
+            })
         }
     }
 

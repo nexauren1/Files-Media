@@ -106,6 +106,7 @@ class PlaybackActivity : AppCompatActivity() {
             val nextTitle = mediaItem?.mediaMetadata?.title?.toString() ?: currentTitle
             if (::headerTitleView.isInitialized) headerTitleView.text = nextTitle
             if (::audioTitle.isInitialized) audioTitle.text = nextTitle
+            if (!isVideoMode) loadAudioMetadata(mediaItem)
             updateAudioProgress()
         }
     }
@@ -407,13 +408,8 @@ class PlaybackActivity : AppCompatActivity() {
         positionLabel.text = formatTime(position)
         durationLabel.text = formatTime(duration)
         playPauseButton.text = if (player.isPlaying) "Ⅱ" else "▶"
-        if (albumArtFallback.visibility == View.VISIBLE) {
-            audioTitle.text = player.mediaMetadata.title?.toString() ?: currentTitle
-        }
-        val currentUri = player.currentMediaItem?.localConfiguration?.uri
-        if (audioSubtitle.text.isNullOrBlank()) {
-            audioSubtitle.text = currentUri?.lastPathSegment ?: "Reprodução local · sem Internet"
-        }
+        // Track title and artist/album labels are refreshed from MediaMetadataRetriever.
+        // This ticker only updates the playback controls so it does not overwrite richer metadata.
     }
 
     private fun showPlaybackMenu(anchor: View) {

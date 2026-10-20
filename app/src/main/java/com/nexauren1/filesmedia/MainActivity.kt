@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -63,6 +64,27 @@ class MainActivity : AppCompatActivity() {
     private val directoryStack = ArrayList<DocumentFile>()
     private var pendingTransferEntry: MediaEntry? = null
     private var pendingMove = false
+    private var sortMode = "date"
+
+    private val pdfPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+            // The provider may return a temporary-only read grant.
+        }
+        val entry = readPdfEntry(uri)
+        if (entry == null) {
+            toast("Não foi possível aceder a este PDF.")
+        } else {
+            rememberRecentPdf(entry)
+            openEntry(entry)
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -185,11 +207,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun showOverflowMenu(anchor: View) {
         val menu = PopupMenu(this, anchor)
+        menu.menu.add("Abrir um PDF…")
+        menu.menu.add("Ordenar: mais recentes")
+        menu.menu.add("Ordenar: nome A–Z")
+        menu.menu.add("Ordenar: maior tamanho")
         menu.menu.add("Explorar armazenamento")
         menu.menu.add("Atualizar")
         menu.menu.add("Permissões")
         menu.setOnMenuItemClickListener {
             when (it.title.toString()) {
+                "Abrir um PDF…" -> openPdfPicker()
+                "Ordenar: mais recentes" -> { sortMode = "date"; reloadCurrentPage() }
+                "Ordenar: nome A–Z" -> { sortMode = "name"; reloadCurrentPage() }
+                "Ordenar: maior tamanho" -> { sortMode = "size"; reloadCurrentPage() }
                 "Explorar armazenamento" -> openStoragePicker()
                 "Atualizar" -> reloadCurrentPage()
                 "Permissões" -> requestMediaPermissionsIfNeeded(force = true)
@@ -301,7 +331,11 @@ class MainActivity : AppCompatActivity() {
         ).apply { bottomMargin = dp(10) })
 
         lifecycleScope.launch {
-            val entries = withContext(Dispatchers.IO) { repository.query("all").take(8) }
+            val entries = withContext(Dispatchers.IO) {
+                (getRecentPdfEntries() + repository.query("all"))
+                    .distinctBy { it.uri.toString() }
+                    .take(8)
+            }
             if (pageKind != "home" || isFinishing || isDestroyed) return@launch
             row.removeAllViews()
             if (entries.isEmpty()) {
@@ -949,6 +983,81 @@ class MainActivity : AppCompatActivity() {
         setPadding(dp(2), dp(8), dp(2), dp(12))
     }
 
+    private fun openPdfPicker() {
+        pdfPicker.launch(arrayOf("application/pdf"))
+    }
+
+    private fun readPdfEntry(uri: Uri): MediaEntry? {
+        var name = "Documento.pdf"
+        var size = 0L
+        try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                }
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        val mime = contentResolver.getType(uri) ?: "application/pdf"
+        if (!mime.equals("application/pdf", ignoreCase = true) &&
+            !name.endsWith(".pdf", ignoreCase = true)
+        ) return null
+        return MediaEntry(
+            uri = uri,
+            name = name,
+            mimeType = "application/pdf",
+            size = size,
+            modified = System.currentTimeMillis() / 1000L,
+            source = EntrySource.SAF,
+            document = DocumentFile.fromSingleUri(this, uri)
+        )
+    }
+
+    private fun rememberRecentPdf(entry: MediaEntry) {
+        if (entry.source != EntrySource.SAF) return
+        val prefs = getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+        val existing = prefs.getString("recent_pdf_uris", "").orEmpty()
+            .lines().filter { it.isNotBlank() && it != entry.uri.toString() }
+        val updated = (listOf(entry.uri.toString()) + existing).take(40)
+        prefs.edit().putString("recent_pdf_uris", updated.joinToString("\n")).apply()
+    }
+
+    private fun getRecentPdfEntries(searchQuery: String = ""): List<MediaEntry> {
+        val uriList = getSharedPreferences("files_media_preferences", MODE_PRIVATE)
+            .getString("recent_pdf_uris", "").orEmpty()
+            .lines().filter { it.isNotBlank() }
+        val needle = searchQuery.trim().lowercase(Locale.ROOT)
+        return uriList.mapNotNull { value ->
+            try { readPdfEntry(Uri.parse(value)) } catch (_: Exception) { null }
+        }.filter { it.name.lowercase(Locale.ROOT).contains(needle) }
+    }
+
+    private fun sortEntries(entries: List<MediaEntry>): List<MediaEntry> {
+        return when (sortMode) {
+            "name" -> entries.sortedWith(
+                compareByDescending<MediaEntry> { it.isDirectory }
+                    .thenBy { it.name.lowercase(Locale.ROOT) }
+            )
+            "size" -> entries.sortedWith(
+                compareByDescending<MediaEntry> { it.isDirectory }
+                    .thenByDescending { it.size }
+            )
+            else -> entries.sortedWith(
+                compareByDescending<MediaEntry> { it.isDirectory }
+                    .thenByDescending { it.modified }
+                    .thenBy { it.name.lowercase(Locale.ROOT) }
+            )
+        }
+    }
+
     private fun openCategory(category: String, title: String) {
         directoryStack.clear()
         renderCategory(category, title)
@@ -959,6 +1068,38 @@ class MainActivity : AppCompatActivity() {
         pageTitle = title
         buildToolbar(title, true)
         contentHost.removeAllViews()
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        if (category == "documents" || category == "downloads") {
+            val action = TextView(this).apply {
+                text = if (category == "documents") "＋   Abrir PDF do dispositivo" else "＋   Escolher pasta de transferências"
+                textSize = 15f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(primaryColor)
+                gravity = Gravity.CENTER_VERTICAL
+                background = rounded(Color.WHITE, 16)
+                setPadding(dp(18), 0, dp(18), 0)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    if (category == "documents") openPdfPicker() else openStoragePicker()
+                }
+            }
+            page.addView(action, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
+            ).apply {
+                setMargins(dp(16), dp(8), dp(16), dp(6))
+            })
+            if (category == "documents") {
+                page.addView(TextView(this).apply {
+                    text = "Os PDFs escolhidos ficam disponíveis em Recentes e nesta lista."
+                    textSize = 12f
+                    setTextColor(secondaryColor)
+                    setPadding(dp(18), dp(2), dp(18), dp(6))
+                })
+            }
+        }
         val frame = FrameLayout(this)
         val recycler = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
@@ -975,17 +1116,25 @@ class MainActivity : AppCompatActivity() {
         frame.addView(empty, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        contentHost.addView(frame)
+        page.addView(frame, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        contentHost.addView(page, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
         lifecycleScope.launch {
             val entries = withContext(Dispatchers.IO) {
                 val sourceCategory = if (category == "starred" || category == "large") "all" else category
                 val found = repository.query(sourceCategory, searchQuery)
-                when (category) {
-                    "starred" -> found.filter { isFavorite(it) }
-                    "large" -> found.filter { it.size >= 100L * 1024L * 1024L }
-                        .sortedByDescending { it.size }
-                    else -> found
+                val combined = if (category == "documents") {
+                    (getRecentPdfEntries(searchQuery) + found).distinctBy { it.uri.toString() }
+                } else found
+                val filtered = when (category) {
+                    "starred" -> combined.filter { isFavorite(it) }
+                    "large" -> combined.filter { it.size >= 100L * 1024L * 1024L }
+                    else -> combined
                 }
+                sortEntries(filtered)
             }
             if (pageKind != category || isFinishing || isDestroyed) return@launch
             currentVisibleEntries = entries
@@ -1172,6 +1321,7 @@ class MainActivity : AppCompatActivity() {
                 })
             }
             mime == "application/pdf" || entry.name.lowercase(Locale.ROOT).endsWith(".pdf") -> {
+                rememberRecentPdf(entry)
                 startActivity(Intent(this, PdfActivity::class.java).apply {
                     data = entry.uri
                     putExtra(PdfActivity.EXTRA_URI, entry.uri.toString())

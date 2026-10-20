@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingMove = false
     private var pendingBatchDelete = false
     private var pendingBatchSafDeleteEntries: List<MediaEntry> = emptyList()
+    private var pendingTransferEntries: List<MediaEntry> = emptyList()
     private var sortMode = "date"
     private var activeSearchQuery = ""
 
@@ -115,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         val uri = result.data?.data
         if (result.resultCode != RESULT_OK || uri == null) {
             pendingTransferEntry = null
+            pendingTransferEntries = emptyList()
             return@registerForActivityResult
         }
         val flags = (result.data?.flags ?: 0) and
@@ -125,7 +127,9 @@ class MainActivity : AppCompatActivity() {
             // Some document providers return a transient-only grant. Continue with the current grant.
         }
 
-        if (pendingTransferEntry != null) {
+        if (pendingTransferEntries.isNotEmpty()) {
+            transferSelectedToFolder(uri)
+        } else if (pendingTransferEntry != null) {
             transferToFolder(uri)
         } else {
             val rootFolder = DocumentFile.fromTreeUri(this, uri)
@@ -247,6 +251,7 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add("Ordenar: mais recentes")
         menu.menu.add("Ordenar: nome A–Z")
         menu.menu.add("Ordenar: maior tamanho")
+        if (directoryStack.isNotEmpty()) menu.menu.add("Criar pasta nesta localização")
         menu.menu.add("Explorar armazenamento")
         menu.menu.add("Atualizar")
         menu.menu.add("Permissões")
@@ -258,6 +263,7 @@ class MainActivity : AppCompatActivity() {
                 "Ordenar: mais recentes" -> { sortMode = "date"; reloadCurrentPage() }
                 "Ordenar: nome A–Z" -> { sortMode = "name"; reloadCurrentPage() }
                 "Ordenar: maior tamanho" -> { sortMode = "size"; reloadCurrentPage() }
+                "Criar pasta nesta localização" -> createFolderInCurrentDirectory()
                 "Explorar armazenamento" -> openStoragePicker(forcePicker = true)
                 "Atualizar" -> reloadCurrentPage()
                 "Permissões" -> requestMediaPermissionsIfNeeded(force = true)
@@ -1635,13 +1641,17 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 1, 0, "Selecionar tudo")
         menu.menu.add(0, 2, 1, "Partilhar selecionados")
         menu.menu.add(0, 3, 2, "Eliminar selecionados")
-        menu.menu.add(0, 4, 3, "Cancelar seleção")
+        menu.menu.add(0, 5, 3, "Copiar selecionados para…")
+        menu.menu.add(0, 6, 4, "Mover selecionados para…")
+        menu.menu.add(0, 4, 5, "Cancelar seleção")
         menu.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> adapter.selectAll()
                 2 -> shareSelectedEntries(adapter.selectedEntries())
                 3 -> deleteSelectedEntries(adapter.selectedEntries())
                 4 -> adapter.clearSelection()
+                5 -> chooseBatchTransferDestination(adapter.selectedEntries(), false)
+                6 -> chooseBatchTransferDestination(adapter.selectedEntries(), true)
             }
             true
         }
@@ -1784,7 +1794,28 @@ class MainActivity : AppCompatActivity() {
             }.show()
     }
 
+    private fun chooseBatchTransferDestination(entries: List<MediaEntry>, move: Boolean) {
+        if (entries.isEmpty()) {
+            toast("Seleciona primeiro pelo menos um ficheiro.")
+            return
+        }
+        if (entries.any { it.isDirectory }) {
+            toast("A cópia em lote suporta ficheiros. Retira as pastas da seleção.")
+            return
+        }
+        pendingTransferEntries = entries
+        pendingTransferEntry = null
+        pendingMove = move
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        treePicker.launch(intent)
+    }
+
     private fun chooseTransferDestination(entry: MediaEntry, move: Boolean) {
+        pendingTransferEntries = emptyList()
         pendingTransferEntry = entry
         pendingMove = move
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
@@ -1793,6 +1824,106 @@ class MainActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         treePicker.launch(intent)
+    }
+
+    private fun transferSelectedToFolder(destinationUri: Uri) {
+        val entries = pendingTransferEntries
+        pendingTransferEntries = emptyList()
+        val move = pendingMove
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val destination = try {
+                    DocumentFile.fromTreeUri(this@MainActivity, destinationUri)
+                } catch (_: Exception) {
+                    null
+                } ?: return@withContext emptyList<MediaEntry>() to entries.size
+
+                val copiedEntries = ArrayList<MediaEntry>()
+                var failedCount = 0
+                entries.forEach { entry ->
+                    var target: DocumentFile? = null
+                    try {
+                        val mime = entry.mimeType ?: guessMime(entry.name)
+                        var targetName = entry.name
+                        if (destination.findFile(targetName) != null) {
+                            targetName = "Copy - " + entry.name
+                        }
+                        if (destination.findFile(targetName) != null) {
+                            targetName = System.currentTimeMillis().toString() + " - " + entry.name
+                        }
+                        target = destination.createFile(mime, targetName)
+                        val created = target ?: throw IllegalStateException("Não foi possível criar o destino.")
+                        val inputStream = contentResolver.openInputStream(entry.uri)
+                            ?: throw IllegalStateException("Não foi possível ler o original.")
+                        val outputStream = contentResolver.openOutputStream(created.uri, "w")
+                            ?: throw IllegalStateException("Não foi possível escrever no destino.")
+                        inputStream.use { input -> outputStream.use { output -> input.copyTo(output) } }
+                        copiedEntries.add(entry)
+                    } catch (_: Exception) {
+                        try { target?.delete() } catch (_: Exception) { }
+                        failedCount++
+                    }
+                }
+                copiedEntries to failedCount
+            }
+            val copied = result.first
+            val failed = result.second
+            if (copied.isEmpty()) {
+                toast("Não foi possível copiar os ficheiros selecionados.")
+            } else {
+                toast("Copiados ${copied.size} ficheiros" +
+                    if (failed > 0) "; falharam $failed." else ".")
+                currentAdapter?.clearSelection()
+                if (move) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Concluir movimentação?")
+                        .setMessage("Os ficheiros foram copiados. Queres eliminar os originais que foram copiados com sucesso?")
+                        .setNegativeButton("Manter originais", null)
+                        .setPositiveButton("Eliminar originais") { _, _ ->
+                            deleteSelectedEntries(copied)
+                        }
+                        .show()
+                }
+            }
+            reloadCurrentPage()
+        }
+    }
+
+    private fun createFolderInCurrentDirectory() {
+        val directory = directoryStack.lastOrNull()
+        if (directory == null) {
+            toast("Escolhe primeiro uma pasta de destino.")
+            return
+        }
+        val input = EditText(this).apply {
+            hint = "Nome da pasta"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Criar pasta")
+            .setView(input)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Criar") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isBlank() || name == "." || name == ".." ||
+                    name.contains("/") || name.contains("\\\\")
+                ) {
+                    toast("Introduz um nome de pasta válido.")
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val created = withContext(Dispatchers.IO) {
+                        try {
+                            directory.createDirectory(name) != null
+                        } catch (_: Exception) {
+                            false
+                        }
+                    }
+                    toast(if (created) "Pasta criada." else "Não foi possível criar a pasta nesta localização.")
+                    if (created) renderCurrentFolder()
+                }
+            }
+            .show()
     }
 
     private fun transferToFolder(destinationUri: Uri) {

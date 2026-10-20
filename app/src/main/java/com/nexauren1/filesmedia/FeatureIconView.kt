@@ -42,7 +42,7 @@ class FeatureIconView(
             "apps" -> "Aplicações"
             else -> "Ficheiro"
         }
-        isImportantForAccessibility = true
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
     fun setKind(newKind: String) {

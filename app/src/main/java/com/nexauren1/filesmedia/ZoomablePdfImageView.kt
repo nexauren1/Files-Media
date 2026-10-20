@@ -31,6 +31,11 @@ class ZoomablePdfImageView(context: Context) : ImageView(context) {
         post { fitPage() }
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw || h != oldh) post { fitPage() }
+    }
+
     fun fitPage() {
         val drawable = drawable ?: return
         if (width <= 0 || height <= 0 || drawable.intrinsicWidth <= 0 || drawable.intrinsicHeight <= 0) return
